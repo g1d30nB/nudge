@@ -111,6 +111,12 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 - No gesture to select an element's parent.
 - Pages with a Content-Security-Policy that blocks external scripts refuse the loader, and the bookmark does nothing.
 
+## Where it is going
+
+The open issues are the roadmap. Text editing, type size and spacing, token-aware colour and gap adjustment are the four I most want, roughly in that order.
+
+nudge will not gain the ability to add elements or change layout mode. It corrects what is there; it is not somewhere to build a page.
+
 ## Early days
 
 nudge changes nothing on disk. Everything it does is inline styles on the page in front of you; Reset or a refresh clears them.
