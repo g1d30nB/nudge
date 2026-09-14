@@ -1,0 +1,483 @@
+// nudge v1 suite. One test per GOOD check in CONTRACT.md.
+import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(here, '..');
+const NUDGE = path.join(ROOT, 'nudge.js');
+const ORIGIN = 'https://nudge.test'; // https so navigator.clipboard exists; page.route fulfils before the network
+const FIXTURE = `${ORIGIN}/fixture.html`;
+
+const FOOTER = [
+  'Apply these in source CSS and markup, in the files named above where given.',
+  'A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.',
+  'A move with no alignment is a spacing intent: adjust margin or gap.',
+  'Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.',
+  'Removals delete the element from the markup. Do not add inline styles.',
+];
+
+const TAGLINE = '[data-test=tagline]';
+const FIG = '[data-test=fig]';
+const TARGET = '[data-test=target]';
+
+/* ───────────── harness ───────────── */
+
+let errors = [];
+
+test.beforeEach(async ({ page }) => {
+  errors = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  await page.route(`${ORIGIN}/**`, async (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === '/fixture.html') return route.fulfill({ contentType: 'text/html', body: await readFile(path.join(here, 'fixture.html'), 'utf8') });
+    if (p === '/nudge.js') return route.fulfill({ contentType: 'text/javascript', body: await readFile(NUDGE, 'utf8') });
+    if (p === '/elsewhere') return route.fulfill({ contentType: 'text/html', body: '<title>elsewhere</title><p>navigated</p>' });
+    return route.fulfill({ status: 404, body: '' });
+  });
+  await page.goto(FIXTURE);
+});
+
+test.afterEach(() => {
+  expect(errors, 'console.error / pageerror during test').toEqual([]);
+});
+
+/* ───────────── helpers ───────────── */
+
+const inject = (page) => page.addScriptTag({ url: `${ORIGIN}/nudge.js?t=${Date.now()}` });
+
+const rect = (page, sel) => page.evaluate((s) => {
+  const b = document.querySelector(s).getBoundingClientRect();
+  return { left: b.left, top: b.top, right: b.right, bottom: b.bottom, width: b.width, height: b.height, cx: (b.left + b.right) / 2, cy: (b.top + b.bottom) / 2 };
+}, sel);
+
+const changes = (page) => page.evaluate(() => window.__nudge._state.changes.map((r) => ({
+  test: r.el.getAttribute('data-test') || r.el.id || r.el.tagName.toLowerCase(),
+  dx: r.dx, dy: r.dy, w: r.w, h: r.h, removed: r.removed, snaps: r.snaps,
+})));
+
+const report = (page) => page.evaluate(() => window.__nudge.report());
+
+const selectedIs = (page, sel) => page.evaluate((s) => window.__nudge._state.selected === (s ? document.querySelector(s) : null), sel);
+
+const guidesVisible = (page) => page.evaluate(() => {
+  const { guideH, guideV } = window.__nudge._state.els;
+  return guideH.style.display !== 'none' || guideV.style.display !== 'none';
+});
+
+const cssText = (page, sel) => page.evaluate((s) => document.querySelector(s).style.cssText, sel);
+const computed = (page, sel, prop) => page.evaluate(([s, p]) => getComputedStyle(document.querySelector(s))[p], [sel, prop]);
+
+// Scroll the element into view first if it is not fully visible, as a user would.
+async function into(page, sel) {
+  await page.evaluate((s) => {
+    const el = document.querySelector(s), b = el.getBoundingClientRect();
+    if (b.top < 0 || b.bottom > innerHeight) el.scrollIntoView({ block: 'center' });
+  }, sel);
+}
+
+async function select(page, sel, offset) {
+  await into(page, sel);
+  const b = await rect(page, sel);
+  const x = offset ? b.left + offset[0] : b.cx;
+  const y = offset ? b.top + offset[1] : b.cy;
+  await page.mouse.click(x, y);
+}
+
+// The figure has 6px padding so a click in its corner lands on the figure, not the img.
+const selectFig = (page) => select(page, FIG, [3, 3]);
+
+async function drag(page, from, to, { steps = 20, shift = false } = {}) {
+  if (shift) await page.keyboard.down('Shift');
+  await page.mouse.move(from[0], from[1]);
+  await page.mouse.down();
+  await page.mouse.move(to[0], to[1], { steps });
+  await page.mouse.up();
+  if (shift) await page.keyboard.up('Shift');
+}
+
+async function resizeE(page, sel, dx) {
+  const b = await rect(page, sel);
+  await drag(page, [b.right, b.cy], [b.right + dx, b.cy]);
+}
+
+const scrollWorkIntoView = (page) => page.evaluate(() => document.querySelector('#work').scrollIntoView());
+
+/* ───────────── checks ───────────── */
+
+test('1 syntax: node --check nudge.js exits 0', () => {
+  execFileSync('node', ['--check', NUDGE]);
+});
+
+test('2 toggle: second inject destroys, tool DOM removed', async ({ page }) => {
+  await inject(page);
+  expect(await page.evaluate(() => typeof window.__nudge)).toBe('object');
+  expect(await page.locator('[data-nudge]').count()).toBeGreaterThan(0);
+  await inject(page);
+  expect(await page.evaluate(() => typeof window.__nudge)).toBe('undefined');
+  expect(await page.locator('[data-nudge]').count()).toBe(0);
+});
+
+test('3 no console errors across load, inject, interact', async ({ page }) => {
+  await inject(page);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 40);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Escape');
+  expect(errors).toEqual([]);
+});
+
+test('4 resize: E handle +300px on the tagline', async ({ page }) => {
+  await inject(page);
+  const base = await rect(page, TAGLINE);
+  expect(base.width).toBe(540);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 300);
+  const [c] = await changes(page);
+  expect(c.test).toBe('tagline');
+  expect(Math.abs(c.w - (base.width + 300))).toBeLessThanOrEqual(2);
+  expect(parseFloat(await computed(page, TAGLINE, 'width'))).toBeCloseTo(c.w, 0);
+  expect(await report(page)).toContain('width 540px → 840px (was capped by max-width: 540px)');
+});
+
+test('5 move + snap: figure bottom aligns with paragraph bottom', async ({ page }) => {
+  await scrollWorkIntoView(page);
+  await inject(page);
+  await selectFig(page);
+  const f = await rect(page, FIG), p = await rect(page, TARGET);
+  const dy = p.bottom - f.bottom - 3;
+  expect(dy).toBeGreaterThan(20);
+  await drag(page, [f.cx, f.cy], [f.cx, f.cy + dy]);
+  const f2 = await rect(page, FIG), p2 = await rect(page, TARGET);
+  expect(Math.abs(f2.bottom - p2.bottom)).toBeLessThanOrEqual(1);
+  const text = await report(page);
+  expect(text).toMatch(/bottom edge aligned with bottom edge of section#work > div\.case-block > p .*"Our largest programme/);
+});
+
+test('6 no false snap: shift held disables guides and alignment', async ({ page }) => {
+  await scrollWorkIntoView(page);
+  await inject(page);
+  await selectFig(page);
+  const f = await rect(page, FIG), p = await rect(page, TARGET);
+  const dy = p.bottom - f.bottom - 3;
+  await page.keyboard.down('Shift');
+  await page.mouse.move(f.cx, f.cy);
+  await page.mouse.down();
+  const steps = 20;
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(f.cx, f.cy + (dy * i) / steps);
+    expect(await guidesVisible(page), `guide visible at step ${i}`).toBe(false);
+  }
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  const f2 = await rect(page, FIG), p2 = await rect(page, TARGET);
+  expect(Math.abs(f2.bottom - p2.bottom)).toBeCloseTo(3, 0);
+  expect(await report(page)).not.toContain('aligned with');
+});
+
+test('7 remove: Backspace hides the element and reports removal', async ({ page }) => {
+  await scrollWorkIntoView(page);
+  await inject(page);
+  await selectFig(page);
+  await page.keyboard.press('Backspace');
+  expect(await computed(page, FIG, 'display')).toBe('none');
+  expect(await report(page)).toContain('remove this element from the markup');
+});
+
+test('8 arrow nudge: 1px per press, 10px with shift', async ({ page }) => {
+  await inject(page);
+  await select(page, TAGLINE);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  expect((await changes(page))[0].dy).toBe(3);
+  await page.keyboard.press('Shift+ArrowRight');
+  expect((await changes(page))[0].dx).toBe(10);
+});
+
+test('9 undo: row undo restores cssText and removes the row', async ({ page }) => {
+  await inject(page);
+  const before = await cssText(page, TAGLINE);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  await select(page, '#rotated');
+  await page.keyboard.press('ArrowDown');
+  const rows = page.locator('#nudge-list button');
+  await expect(rows).toHaveCount(2);
+  await rows.first().click();
+  await expect(rows).toHaveCount(1);
+  expect(await cssText(page, TAGLINE)).toBe(before);
+});
+
+test('10 reset: three changes restored, list empty', async ({ page }) => {
+  await inject(page);
+  const orig = {
+    tagline: await cssText(page, TAGLINE),
+    rotated: await cssText(page, '#rotated'),
+    fig: await cssText(page, FIG),
+  };
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  await select(page, '#rotated');
+  await page.keyboard.press('ArrowDown');
+  await scrollWorkIntoView(page);
+  await selectFig(page);
+  await page.keyboard.press('Backspace');
+  expect(await changes(page)).toHaveLength(3);
+  await page.locator('#nudge-reset').click();
+  expect(await changes(page)).toHaveLength(0);
+  expect(await cssText(page, TAGLINE)).toBe(orig.tagline);
+  expect(await cssText(page, '#rotated')).toBe(orig.rotated);
+  expect(await cssText(page, FIG)).toBe(orig.fig);
+  await expect(page.locator('#nudge-list')).toHaveText('No changes yet.');
+});
+
+test('11 tool DOM excluded from selection and snap candidates', async ({ page }) => {
+  await inject(page);
+  const panel = await page.evaluate(() => { const b = window.__nudge._state.els.panel.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + 18 }; });
+  await page.mouse.move(panel.x, panel.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  expect(await selectedIs(page, null)).toBe(true);
+
+  await select(page, TAGLINE);
+  const handle = await page.evaluate(() => { const b = window.__nudge._state.els.selBox.querySelector('[data-handle=e]').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
+  await page.mouse.move(handle.x, handle.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  expect(await selectedIs(page, TAGLINE)).toBe(true);
+  expect(await page.evaluate(() => !!window.__nudge._state.selected.closest('[data-nudge]'))).toBe(false);
+
+  await page.keyboard.press('ArrowDown');
+  const cand = await page.evaluate(() => {
+    const c = window.__nudge._state.candidates;
+    return { n: c.length, tool: c.filter((x) => x.el.closest('[data-nudge]')).length };
+  });
+  expect(cand.n).toBeGreaterThan(0);
+  expect(cand.tool).toBe(0);
+});
+
+test('12 navigation blocked: clicking a link does not leave the page', async ({ page }) => {
+  await inject(page);
+  await page.locator('#link').click();
+  await page.waitForTimeout(300);
+  expect(page.url()).toBe(FIXTURE);
+});
+
+test('13 scroll: below-fold resize is correct and selection box tracks', async ({ page }) => {
+  await inject(page);
+  await page.mouse.wheel(0, 400);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(400);
+  const base = await rect(page, '#below');
+  expect(base.top).toBeGreaterThan(0);
+  expect(base.bottom).toBeLessThan(812);
+  await select(page, '#below');
+  await resizeE(page, '#below', 100);
+  const [c] = await changes(page);
+  expect(c.test).toBe('below');
+  expect(Math.abs(c.w - (base.width + 100))).toBeLessThanOrEqual(2);
+  await page.mouse.wheel(0, 200);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(600);
+  const tracked = await page.evaluate(() => {
+    const el = document.querySelector('#below').getBoundingClientRect();
+    const box = window.__nudge._state.els.selBox.getBoundingClientRect();
+    return { visible: window.__nudge._state.els.selBox.style.display !== 'none', dl: Math.abs(el.left - box.left), dt: Math.abs(el.top - box.top), dw: Math.abs(el.width - box.width), dh: Math.abs(el.height - box.height) };
+  });
+  expect(tracked.visible).toBe(true);
+  expect(tracked.dl).toBeLessThanOrEqual(1);
+  expect(tracked.dt).toBeLessThanOrEqual(1);
+  expect(tracked.dw).toBeLessThanOrEqual(1);
+  expect(tracked.dh).toBeLessThanOrEqual(1);
+});
+
+test('14 existing transform: rotation preserved through a move, undo restores', async ({ page }) => {
+  const before = await computed(page, '#rotated', 'transform');
+  expect(before).toMatch(/^matrix\(/);
+  await inject(page);
+  await select(page, '#rotated');
+  const r = await rect(page, '#rotated');
+  await drag(page, [r.cx, r.cy], [r.cx, r.cy + 50], { shift: true });
+  const after = await computed(page, '#rotated', 'transform');
+  const m = after.match(/^matrix\(([^)]+)\)$/);
+  expect(m, after).not.toBeNull();
+  const [a, b, , , e, f] = m[1].split(',').map(Number);
+  expect(b).toBeGreaterThan(0.04);          // sin(3°) ≈ 0.052: rotation still present
+  expect(Math.abs(f - 50)).toBeLessThanOrEqual(1);
+  expect(Math.abs(e)).toBeLessThanOrEqual(1);
+  await page.locator('#nudge-list button').first().click();
+  expect(await cssText(page, '#rotated')).toBe('');
+  expect(await computed(page, '#rotated', 'transform')).toBe(before);
+});
+
+test('15 escape clears selection', async ({ page }) => {
+  await inject(page);
+  await select(page, TAGLINE);
+  expect(await selectedIs(page, TAGLINE)).toBe(true);
+  await page.keyboard.press('Escape');
+  expect(await selectedIs(page, null)).toBe(true);
+  expect(await page.evaluate(() => window.__nudge._state.els.selBox.style.display)).toBe('none');
+});
+
+test('16 copy: clipboard equals report(), button reads Copied', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-13T10:41:00Z'));
+  await inject(page);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  await page.locator('#nudge-copy').click();
+  await expect(page.locator('#nudge-copy')).toHaveText('Copied');
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clip).toBe(await report(page));
+});
+
+test('17 astro source attributes appear in the report line', async ({ page }) => {
+  await inject(page);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  expect(await report(page)).toContain('(src/pages/index.astro:46:13)');
+});
+
+test('18 report footer: instruction lines verbatim', async ({ page }) => {
+  await inject(page);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  const text = await report(page);
+  expect(text.endsWith(FOOTER.join('\n'))).toBe(true);
+});
+
+/* ───────────── resize snapping (checks 19–21) ───────────── */
+
+const CARD_A = '[data-test=card-a]';
+const CARD_B = '[data-test=card-b]';
+
+const matchBoxOver = (page, sel) => page.evaluate((s) => {
+  const box = window.__nudge._state.els.matchBox;
+  if (box.style.display === 'none') return { visible: false };
+  const b = box.getBoundingClientRect(), el = document.querySelector(s).getBoundingClientRect();
+  return { visible: true, ok: Math.abs(b.left - el.left) <= 1 && Math.abs(b.top - el.top) <= 1 && Math.abs(b.width - el.width) <= 1 && Math.abs(b.height - el.height) <= 1 };
+}, sel);
+
+// Drag the E handle in steps; returns what was visible at the last step before release.
+async function resizeEStepped(page, sel, dx, { shift = false, each } = {}) {
+  await select(page, sel);
+  const b = await rect(page, sel);
+  if (shift) await page.keyboard.down('Shift');
+  await page.mouse.move(b.right, b.cy);
+  await page.mouse.down();
+  const steps = 20;
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(b.right + (dx * i) / steps, b.cy);
+    if (each) await each(i);
+  }
+  const last = { guides: await guidesVisible(page), match: await matchBoxOver(page, CARD_B) };
+  await page.mouse.up();
+  if (shift) await page.keyboard.up('Shift');
+  return last;
+}
+
+test('19 resize edge snap: right edge aligns with another right edge', async ({ page }) => {
+  await inject(page);
+  await into(page, CARD_A);
+  const a = await rect(page, CARD_A), b = await rect(page, CARD_B);
+  const last = await resizeEStepped(page, CARD_A, b.right - a.right - 3);
+  expect(last.guides).toBe(true);
+  const a2 = await rect(page, CARD_A), b2 = await rect(page, CARD_B);
+  expect(Math.abs(a2.right - b2.right)).toBeLessThanOrEqual(1);
+  const text = await report(page);
+  expect(text).toContain('right edge aligned with right edge of section#cards > div.card.card-b');
+  expect(text).not.toContain('matches');
+});
+
+test('20 resize width match: width snaps to another width, dashed box shown', async ({ page }) => {
+  await inject(page);
+  await into(page, CARD_A);
+  const a = await rect(page, CARD_A), b = await rect(page, CARD_B);
+  const last = await resizeEStepped(page, CARD_A, b.width - a.width - 3);
+  expect(last.match.visible).toBe(true);
+  expect(last.match.ok).toBe(true);
+  const a2 = await rect(page, CARD_A), b2 = await rect(page, CARD_B);
+  expect(Math.abs(a2.width - b2.width)).toBeLessThanOrEqual(1);
+  const text = await report(page);
+  expect(text).toMatch(/width matches width of section#cards > div\.card\.card-b .*\(520px\)/);
+  expect(text).not.toContain('aligned');
+});
+
+test('21 shift disables resize snapping', async ({ page }) => {
+  await inject(page);
+  await into(page, CARD_A);
+  const a = await rect(page, CARD_A), b = await rect(page, CARD_B);
+  const dx = b.width - a.width - 3;
+  await resizeEStepped(page, CARD_A, dx, {
+    shift: true,
+    each: async (i) => {
+      expect(await guidesVisible(page), `guide at step ${i}`).toBe(false);
+      expect((await matchBoxOver(page, CARD_B)).visible, `match box at step ${i}`).toBe(false);
+    },
+  });
+  const a2 = await rect(page, CARD_A);
+  expect(a2.width).toBe(a.width + dx);
+  const text = await report(page);
+  expect(text).not.toContain('aligned');
+  expect(text).not.toContain('matches');
+});
+
+/* ───────────── aspect ratio lock (checks 22–24) ───────────── */
+
+const LOGO = '[data-test=logo]';   // one image, 320×80, ratio 4:1
+
+async function resizeWith(page, sel, handle, [dx, dy], mod) {
+  await select(page, sel);
+  const b = await rect(page, sel);
+  const from = handle === 'e' ? [b.right, b.cy] : handle === 's' ? [b.cx, b.bottom] : [b.right, b.bottom];
+  if (mod) await page.keyboard.down(mod);
+  await page.mouse.move(from[0], from[1]);
+  await page.mouse.down();
+  await page.mouse.move(from[0] + dx, from[1] + dy, { steps: 20 });
+  await page.mouse.up();
+  if (mod) await page.keyboard.up(mod);
+}
+
+test('22 aspect lock: Alt (and Control) keep the ratio on the E handle', async ({ page }) => {
+  await inject(page);
+  await into(page, LOGO);
+  const b = await rect(page, LOGO);
+  expect(b.width / b.height).toBeCloseTo(4, 2);
+
+  await resizeWith(page, LOGO, 'e', [120, 0], 'Alt');
+  const b2 = await rect(page, LOGO);
+  expect(b2.width).toBeGreaterThan(b.width + 80);
+  expect(b2.width / b2.height).toBeCloseTo(4, 1);
+  const text = await report(page);
+  expect(text).toMatch(/aspect ratio kept, scaled to \d+%/);
+  expect(text).not.toContain('distorts');
+
+  await page.locator('#nudge-reset').click();
+  await resizeWith(page, LOGO, 'e', [120, 0], 'Control');
+  const b3 = await rect(page, LOGO);
+  expect(b3.width / b3.height).toBeCloseTo(4, 1);
+});
+
+test('23 aspect lock: corner handle follows the dominant axis', async ({ page }) => {
+  await inject(page);
+  await into(page, LOGO);
+  const b = await rect(page, LOGO);
+  await resizeWith(page, LOGO, 'se', [160, 10], 'Alt');
+  const b2 = await rect(page, LOGO);
+  expect(b2.width).toBeGreaterThan(b.width + 100);
+  expect(b2.width / b2.height).toBeCloseTo(4, 1);
+});
+
+test('24 unmodified resize of an image reports that it distorts', async ({ page }) => {
+  await inject(page);
+  await into(page, LOGO);
+  const b = await rect(page, LOGO);
+  await resizeWith(page, LOGO, 'e', [120, 0], null);
+  const b2 = await rect(page, LOGO);
+  expect(b2.height).toBeCloseTo(b.height, 0);
+  expect(b2.width / b2.height).toBeGreaterThan(4.2);
+  const text = await report(page);
+  expect(text).toMatch(/aspect ratio changed from 4\.00:1 to \d\.\d\d:1; this distorts the image/);
+  expect(text).not.toContain('aspect ratio kept');
+});

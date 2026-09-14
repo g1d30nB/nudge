@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weekly planning · nudge demo</title>
+<!--
+  Demo page for recording nudge. Fictional product, wireframe grade.
+  Two deliberate flaws to fix on camera:
+    1. .hero-subhead is capped at a max-width much narrower than its column.
+    2. .split-media is top-aligned while .split-copy runs much taller.
+  The data-astro-source-file and data-astro-source-loc attributes on a few
+  elements are FAKED for the demo, so the batch shows file paths the way it
+  does on a real Astro dev server. Nothing here is built by Astro.
+-->
+<style>
+  :root {
+    --ink: #1f2124;
+    --ink-soft: #5b6068;
+    --ink-faint: #8a9099;
+    --line: #e3e5e8;
+    --ground: #fbfbfa;
+    --panel: #ffffff;
+    --box: #d9dcdf;
+    --box-deep: #c5c9ce;
+    --radius: 8px;
+    --wrap: 1180px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3, p { margin: 0; }
+  .wrap { width: 100%; max-width: var(--wrap); margin: 0 auto; padding: 0 40px; }
+  .section { padding: 44px 0; }
+  .section + .section { border-top: 1px solid var(--line); }
+
+  .button { display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border-radius: 6px; font-size: 14px; font-weight: 600; }
+  .button--primary { background: var(--ink); color: #fff; }
+  .button--secondary { border: 1px solid var(--box-deep); color: var(--ink); background: var(--panel); }
+
+  /* Header */
+  .site-header { position: sticky; top: 0; z-index: 10; background: rgba(251, 251, 250, 0.94); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+  .site-header-inner { display: flex; align-items: center; gap: 40px; height: 64px; }
+  .wordmark { width: 112px; height: 24px; border-radius: 4px; background: var(--box-deep); }
+  .site-nav { display: flex; gap: 28px; margin-left: auto; font-size: 14px; color: var(--ink-soft); }
+  .header-cta { height: 36px; }
+
+  /* Hero */
+  .hero { padding: 56px 0 48px; }
+  .hero-inner { display: grid; grid-template-columns: 1.15fr 1fr; gap: 56px; align-items: center; }
+  .hero-copy { display: flex; flex-direction: column; gap: 16px; }
+  .hero-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+  .hero-headline { font-size: 48px; line-height: 1.08; letter-spacing: -0.02em; font-weight: 700; }
+  .hero-subhead { max-width: 400px; font-size: 18px; color: var(--ink-soft); }
+  .hero-actions { display: flex; gap: 12px; margin-top: 8px; }
+  .hero-media { aspect-ratio: 16 / 9; border-radius: var(--radius); background: var(--box); }
+
+  /* Logo strip */
+  .logo-strip { padding: 28px 0; }
+  .logo-row { display: flex; justify-content: space-between; gap: 32px; }
+  .logo-box { flex: 0 0 136px; height: 36px; border-radius: 4px; background: var(--box); }
+
+  /* Features */
+  .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .feature-card { display: flex; flex-direction: column; gap: 10px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  .feature-icon { width: 40px; height: 40px; border-radius: 8px; background: var(--box); }
+  .feature-heading { font-size: 17px; font-weight: 650; }
+  .feature-copy { font-size: 15px; color: var(--ink-soft); }
+
+  /* Split */
+  .split-inner { display: grid; grid-template-columns: minmax(0, 540px) 1fr; gap: 80px; align-items: start; }
+  .split-copy { display: flex; flex-direction: column; gap: 16px; padding-bottom: 24px; }
+  .split-heading { font-size: 30px; line-height: 1.2; letter-spacing: -0.01em; font-weight: 700; }
+  .split-paragraph { color: var(--ink-soft); }
+  .split-media { justify-self: center; width: 180px; aspect-ratio: 3 / 4; border-radius: var(--radius); background: var(--box); }
+
+  /* Pricing */
+  .pricing-heading { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; text-align: center; margin-bottom: 24px; }
+  .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; align-items: center; }
+  .pricing-card { display: flex; flex-direction: column; gap: 12px; padding: 22px 26px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  .pricing-card--featured { padding: 38px 26px; border-color: var(--ink); }
+  .pricing-name { font-size: 14px; font-weight: 600; color: var(--ink-soft); }
+  .pricing-price { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+  .pricing-price small { font-size: 14px; font-weight: 500; color: var(--ink-faint); }
+  .pricing-features { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--ink-soft); }
+  .pricing-card .button { justify-content: center; margin-top: 6px; }
+
+  /* Footer */
+  .site-footer { padding: 36px 0; border-top: 1px solid var(--line); }
+  .footer-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+  .footer-column { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--ink-soft); }
+  .footer-heading { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap site-header-inner">
+    <a class="wordmark" href="#" aria-label="Home"></a>
+    <nav class="site-nav">
+      <a href="#features">Product</a>
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#footer">Resources</a>
+    </nav>
+    <a class="button button--primary header-cta" href="#pricing">Start free</a>
+  </div>
+</header>
+
+<main>
+  <section class="section hero">
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <p class="hero-eyebrow">Planning for small teams</p>
+        <h1 class="hero-headline">Weekly plans your team will actually read</h1>
+        <p class="hero-subhead"
+           data-astro-source-file="/home/dev/site/src/components/Hero.astro"
+           data-astro-source-loc="14:7">Turn scattered notes into one clear plan each Monday, and see what moved by Friday.</p>
+        <div class="hero-actions">
+          <a class="button button--primary" href="#pricing">Start free</a>
+          <a class="button button--secondary" href="#how">See how it works</a>
+        </div>
+      </div>
+      <div class="hero-media" role="img" aria-label="Product screenshot placeholder"
+           data-astro-source-file="/home/dev/site/src/components/Hero.astro"
+           data-astro-source-loc="22:5"></div>
+    </div>
+  </section>
+
+  <section class="section logo-strip" aria-label="Customer logos">
+    <div class="wrap logo-row">
+      <div class="logo-box"></div>
+      <div class="logo-box"></div>
+      <div class="logo-box"></div>
+      <div class="logo-box"></div>
+      <div class="logo-box"></div>
+    </div>
+  </section>
+
+  <section class="section features" id="features">
+    <div class="wrap features-grid">
+      <article class="feature-card">
+        <div class="feature-icon"></div>
+        <h3 class="feature-heading">One plan per week</h3>
+        <p class="feature-copy">Every Monday starts from last week's plan, so nothing falls off between meetings.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon"></div>
+        <h3 class="feature-heading">Owners, not assignees</h3>
+        <p class="feature-copy">Each item has one person who answers for it, and a date they chose themselves.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon"></div>
+        <h3 class="feature-heading">A Friday you can read</h3>
+        <p class="feature-copy">What shipped, what slipped and why, written in sentences rather than status colours.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section split" id="how">
+    <div class="wrap split-inner">
+      <div class="split-copy"
+           data-astro-source-file="/home/dev/site/src/components/Split.astro"
+           data-astro-source-loc="9:5">
+        <h2 class="split-heading">Built for the meeting you already have</h2>
+        <p class="split-paragraph">Most teams do not need another place to track work. They need the Monday conversation to end with something written down that everyone agrees on, and the Friday conversation to start from it.</p>
+        <p class="split-paragraph">A plan is a short list of outcomes for the week, each with an owner and a reason. Items carry over automatically when they are not done, and the carry-over is visible, so a task that has slipped three weeks running is hard to ignore.</p>
+        <p class="split-paragraph">On Friday each owner writes two sentences: what happened, and what they would do differently. Those notes become next week's starting point rather than a report nobody opens.</p>
+      </div>
+      <div class="split-media" role="img" aria-label="Portrait image placeholder"
+           data-astro-source-file="/home/dev/site/src/components/Split.astro"
+           data-astro-source-loc="17:5"></div>
+    </div>
+  </section>
+
+  <section class="section pricing" id="pricing">
+    <div class="wrap">
+      <h2 class="pricing-heading">Simple pricing</h2>
+      <div class="pricing-grid">
+        <article class="pricing-card">
+          <p class="pricing-name">Starter</p>
+          <p class="pricing-price">£0 <small>per month</small></p>
+          <ul class="pricing-features">
+            <li>Up to five people</li>
+            <li>One team plan</li>
+            <li>Friday notes</li>
+          </ul>
+          <a class="button button--secondary" href="#">Start free</a>
+        </article>
+        <article class="pricing-card pricing-card--featured"
+                 data-astro-source-file="/home/dev/site/src/components/Pricing.astro"
+                 data-astro-source-loc="31:9">
+          <p class="pricing-name">Team</p>
+          <p class="pricing-price">£6 <small>per person, per month</small></p>
+          <ul class="pricing-features">
+            <li>Unlimited people</li>
+            <li>Plans for every team</li>
+            <li>Tracker links</li>
+            <li>Carry-over history</li>
+          </ul>
+          <a class="button button--primary" href="#">Try Team free</a>
+        </article>
+        <article class="pricing-card">
+          <p class="pricing-name">Organisation</p>
+          <p class="pricing-price">£11 <small>per person, per month</small></p>
+          <ul class="pricing-features">
+            <li>Everything in Team</li>
+            <li>Single sign-on</li>
+            <li>Audit log</li>
+          </ul>
+          <a class="button button--secondary" href="#">Talk to us</a>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer" id="footer">
+  <div class="wrap footer-grid">
+    <div class="footer-column">
+      <p class="footer-heading">Product</p>
+      <a href="#">Plans</a><a href="#">Friday notes</a><a href="#">Integrations</a>
+    </div>
+    <div class="footer-column">
+      <p class="footer-heading">Company</p>
+      <a href="#">About</a><a href="#">Careers</a><a href="#">Contact</a>
+    </div>
+    <div class="footer-column">
+      <p class="footer-heading">Resources</p>
+      <a href="#">Guides</a><a href="#">Templates</a><a href="#">Changelog</a>
+    </div>
+    <div class="footer-column">
+      <p class="footer-heading">Legal</p>
+      <a href="#">Privacy</a><a href="#">Terms</a><a href="#">Security</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

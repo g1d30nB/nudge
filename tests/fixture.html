@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>nudge fixture</title>
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #222; background: #fafaf7; }
+  section { box-sizing: border-box; }
+  #hero { display: flex; gap: 40px; padding: 40px; height: 300px; }
+  .hero-text { width: 900px; display: flex; flex-direction: column; gap: 16px; }
+  .hero-text h1 { margin: 0; font-size: 32px; }
+  .tagline { max-width: 540px; margin: 0; }
+  .hero-product { margin: 0; width: 240px; }
+  .hero-product img { display: block; width: 240px; height: 180px; background: #d9d4cb; }
+  #work { display: grid; grid-template-columns: 240px 1fr 300px; gap: 32px; padding: 40px; align-items: start; }
+  .case-intro h2 { margin: 0; font-size: 20px; }
+  .case-block { padding-bottom: 40px; }
+  .case-block p { margin: 0 0 16px; }
+  .case-media figure { margin: 0; padding: 6px; background: #eee9e0; }
+  .case-media img { display: block; width: 288px; height: 232px; background: #b8b1a5; }
+  #extras { padding: 40px; display: flex; gap: 60px; align-items: center; }
+  #rotated { width: 160px; height: 60px; background: #c9d7f2; transform: rotate(3deg); }
+  #deep { margin-top: 0; padding: 40px; }
+  #below { width: 300px; height: 80px; background: #e2d5c0; }
+  #cards { padding: 40px; display: flex; flex-direction: column; gap: 24px; align-items: flex-start; }
+  .card { padding: 16px; box-sizing: border-box; background: #e6efe0; }
+  .card-a { width: 360px; }
+  .card-b { width: 520px; margin-left: 80px; }
+  #media { padding: 40px; }
+  #media img { display: block; background: #cdd6e4; }
+  #tail { height: 700px; }
+</style>
+</head>
+<body>
+
+<section id="hero">
+  <div class="hero-text">
+    <h1>Plans your whole team will actually read</h1>
+    <p class="tagline" data-test="tagline"
+       data-astro-source-file="/home/dev/site/src/pages/index.astro"
+       data-astro-source-loc="46:13">A planning tool for teams that ship every week, built around the habit of asking what the numbers mean before asking what the chart says. It makes the last ten per cent of a release plan less tedious to finish.</p>
+  </div>
+  <figure class="hero-product" data-test="portrait">
+    <img alt="The product front page" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='180'%3E%3C/svg%3E">
+  </figure>
+</section>
+
+<section id="work">
+  <div class="case-intro">
+    <h2>Case study</h2>
+    <p>A platform programme, 2019 to 2024.</p>
+  </div>
+  <div class="case-block">
+    <p>We inherited an app with a two-star rating and a backlog of nineteen markets, each with its own idea of what the app was for.</p>
+    <p>The first year was spent on the unglamorous parts: a design system that could survive translation, a research cadence that reached actual users, and a product council that met weekly.</p>
+    <p>By the third year the rating was above four in every market, and the app had become the default channel for connected services.</p>
+    <p>Billing, scheduled reports and account settings each shipped as a separate squad's work, then were folded into one journey once the research showed customers did not think in features.</p>
+    <p>The design system moved from a Sketch library to coded components in the second year, which halved the time from a design review to a release candidate.</p>
+    <p>Nineteen markets became one release train with market flags, and the localisation backlog went from months to days.</p>
+    <p data-test="target">Our largest programme ran across four years and eleven teams, and set the pattern for every connected product that followed.</p>
+  </div>
+  <div class="case-media">
+    <figure data-test="fig">
+      <img alt="The home screen" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='288' height='232'%3E%3C/svg%3E">
+    </figure>
+  </div>
+</section>
+
+<section id="extras">
+  <a id="link" href="/elsewhere">Read the full case study</a>
+  <div id="rotated">rotated card</div>
+</section>
+
+<section id="deep">
+  <div id="below">below the fold</div>
+</section>
+
+<section id="cards">
+  <div class="card card-a" data-test="card-a">A short card with text inside. Resize it to match the one below.</div>
+  <div class="card card-b" data-test="card-b">The wider card. Its width and right edge are the snap targets for resize.</div>
+</section>
+
+<section id="media">
+  <img data-test="logo" alt="Four client logos in one image" style="width:320px;height:80px"
+       src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='80'%3E%3C/svg%3E">
+</section>
+
+<div id="tail"></div>
+
+</body>
+</html>

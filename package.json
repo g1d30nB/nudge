@@ -1,0 +1,30 @@
+{
+  "name": "nudge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Drag on the running page, then paste the measurements into your coding agent.",
+  "license": "MIT",
+  "author": "g1d30nB",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/g1d30nB/nudge.git"
+  },
+  "homepage": "https://g1d30nb.github.io/nudge/",
+  "bugs": {
+    "url": "https://github.com/g1d30nB/nudge/issues"
+  },
+  "keywords": [
+    "bookmarklet",
+    "design",
+    "css",
+    "layout",
+    "coding-agent",
+    "claude-code"
+  ],
+  "scripts": {
+    "test": "node --check nudge.js && playwright test --reporter=list"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}
