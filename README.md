@@ -2,6 +2,8 @@
 
 Drag on the running page, then paste the measurements into your coding agent.
 
+nudge reads the rendered page, so it works on anything you can open in a browser: Tailwind, CSS modules, styled-components, plain CSS, any framework or none.
+
 ![nudge widening a capped headline on a demo page, then Claude Code applying the batch to the source](docs/nudge-demo.gif)
 
 ## The problem
@@ -74,7 +76,9 @@ Removals delete the element from the markup. Do not add inline styles.
 
 Each entry names the element by its selector path and a snippet of its text, then lists what changed and what it now lines up with. The closing lines tell the agent how to translate those into CSS.
 
-nudge captures the same measurements and alignments on any page. It adds the source file and line only where the framework injects them into the page, which in practice means Astro in dev mode. Everywhere else the agent gets the selector path and the text snippet and has to find the file itself. That step has been used in anger on Astro and is unproven on other stacks.
+The measurements and alignments are the same on every page. nudge takes them from the rendered layout, so nothing about your stack changes what it can capture.
+
+The file path on each entry is the one exception. nudge can only print it where the framework puts it in the page, which in practice means Astro in dev mode. Everywhere else the agent gets the selector path and a text snippet and finds the file itself, which is the ordinary way an agent locates code. I have used that on Astro; reports from other stacks are welcome, and there is [an open issue](https://github.com/g1d30nB/nudge/issues/6) for them.
 
 The batch is plain text written for a coding agent. It has been used with Claude Code, which is why the button says so.
 
