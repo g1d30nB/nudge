@@ -11,13 +11,13 @@ const NUDGE = path.join(ROOT, 'nudge.js');
 const ORIGIN = 'https://nudge.test'; // https so navigator.clipboard exists; page.route fulfils before the network
 const FIXTURE = `${ORIGIN}/fixture.html`;
 
-const FOOTER = [
-  'Apply these in source CSS and markup, in the files named above where given.',
-  'A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.',
-  'A move with no alignment is a spacing intent: adjust margin or gap.',
-  'Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.',
-  'Removals delete the element from the markup. Do not add inline styles.',
-];
+const FOOTER = {
+  apply: 'Apply these in source CSS and markup, in the files named above where given. Do not add inline styles.',
+  aligned: 'A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.',
+  spacing: 'A move with no alignment is a spacing intent: adjust margin or gap.',
+  widths: 'Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.',
+  removals: 'Removals delete the element from the markup.',
+};
 
 const TAGLINE = '[data-test=tagline]';
 const FIG = '[data-test=fig]';
@@ -339,12 +339,46 @@ test('17 astro source attributes appear in the report line', async ({ page }) =>
   expect(await report(page)).toContain('(src/pages/index.astro:46:13)');
 });
 
-test('18 report footer: instruction lines verbatim', async ({ page }) => {
+// The footer is everything after the last blank line of the report.
+const footerOf = (text) => text.slice(text.lastIndexOf('\n\n') + 2).split('\n');
+
+test('18 report footer: only the instruction lines the batch needs', async ({ page }) => {
   await inject(page);
+  const reset = () => page.locator('#nudge-reset').click();
+
+  // resize only
   await select(page, TAGLINE);
   await resizeE(page, TAGLINE, 100);
-  const text = await report(page);
-  expect(text.endsWith(FOOTER.join('\n'))).toBe(true);
+  expect(footerOf(await report(page))).toEqual([FOOTER.apply, FOOTER.widths]);
+  await reset();
+
+  // move with no alignment (Shift at release records none)
+  await select(page, '#rotated');
+  const rr = await rect(page, '#rotated');
+  await drag(page, [rr.cx, rr.cy], [rr.cx, rr.cy + 30], { shift: true });
+  expect(footerOf(await report(page))).toEqual([FOOTER.apply, FOOTER.spacing]);
+  await reset();
+
+  // removal only
+  await select(page, '#rotated');
+  await page.keyboard.press('Backspace');
+  expect(footerOf(await report(page))).toEqual([FOOTER.apply, FOOTER.removals]);
+  await reset();
+
+  // aligned move, then everything together, in order
+  await scrollWorkIntoView(page);
+  await selectFig(page);
+  const f = await rect(page, FIG), p = await rect(page, TARGET);
+  await drag(page, [f.cx, f.cy], [f.cx, f.cy + (p.bottom - f.bottom - 3)]);
+  expect(footerOf(await report(page))).toEqual([FOOTER.apply, FOOTER.aligned]);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 60);
+  await select(page, '#rotated');
+  const rr2 = await rect(page, '#rotated');
+  await drag(page, [rr2.cx, rr2.cy], [rr2.cx, rr2.cy + 30], { shift: true });
+  await select(page, '#below');
+  await page.keyboard.press('Backspace');
+  expect(footerOf(await report(page))).toEqual([FOOTER.apply, FOOTER.aligned, FOOTER.spacing, FOOTER.widths, FOOTER.removals]);
 });
 
 /* ───────────── resize snapping (checks 19–21) ───────────── */
@@ -480,4 +514,164 @@ test('24 unmodified resize of an image reports that it distorts', async ({ page 
   const text = await report(page);
   expect(text).toMatch(/aspect ratio changed from 4\.00:1 to \d\.\d\d:1; this distorts the image/);
   expect(text).not.toContain('aspect ratio kept');
+});
+
+/* ───────────── sent state, reloads, computed values (checks 25–29) ───────────── */
+
+const SENT = 'Sent. Clear the preview once your agent has applied it.';
+const FRESH = 'Cleared the sent preview for this element; this change starts from the live page.';
+const RELOAD = 'The page reloaded. Clear the preview to see the real result.';
+const tick = (page) => page.evaluate(() => new Promise((r) => setTimeout(r, 60)));
+const status = (page) => page.locator('#nudge-status');
+
+async function copyAndSettle(page) {
+  await page.locator('#nudge-copy').click();
+  await expect(page.locator('#nudge-copy')).toHaveText('Copied');
+  await expect(page.locator('#nudge-copy')).toHaveText('Clear preview');
+}
+
+test('25 copy marks changes as sent, does not revert, Clear preview reverts', async ({ page }) => {
+  await inject(page);
+  const before = await cssText(page, TAGLINE);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  const previewCss = await cssText(page, TAGLINE);
+  expect(previewCss).not.toBe(before);
+
+  await page.locator('#nudge-copy').click();
+  await expect(page.locator('#nudge-copy')).toHaveText('Copied');
+  await page.locator('#nudge-copy').click({ force: true });          // double-click guard: ignored while "Copied"
+  expect(await cssText(page, TAGLINE)).toBe(previewCss);
+  await expect(page.locator('#nudge-copy')).toHaveText('Clear preview');
+
+  await expect(status(page)).toHaveText(SENT);
+  expect(await cssText(page, TAGLINE)).toBe(previewCss);             // not reverted on copy
+  const row = page.locator('#nudge-list [data-sent]');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('✓');
+  expect(parseFloat(await row.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(1);
+  await expect(page.locator('#nudge-recopy')).toBeVisible();
+
+  await page.locator('#nudge-copy').click();                          // Clear preview
+  expect(await cssText(page, TAGLINE)).toBe(before);
+  await expect(page.locator('#nudge-list')).toHaveText('No changes yet.');
+  await expect(page.locator('#nudge-recopy')).toBeHidden();
+  await expect(page.locator('#nudge-copy')).toHaveText('Copy for Claude Code');
+});
+
+test('26 re-copy puts the sent batch on the clipboard again; new changes copy on their own', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-15T09:00:00Z'));
+  await inject(page);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  await copyAndSettle(page);
+  const first = await page.evaluate(() => navigator.clipboard.readText());
+  await page.evaluate(() => navigator.clipboard.writeText('paste failed'));
+  await page.locator('#nudge-recopy').click();
+  await expect(status(page)).toContainText('Copied again');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(first);
+
+  // A new change after sending makes Copy primary again, and copies only the new change.
+  await select(page, '#rotated');
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#nudge-copy')).toHaveText('Copy for Claude Code');
+  await copyAndSettle(page);
+  const second = await page.evaluate(() => navigator.clipboard.readText());
+  expect(second).toContain('div#rotated');
+  expect(second).not.toContain('p.tagline');
+});
+
+test('27 editing a sent element starts a fresh record from the live page', async ({ page }) => {
+  await scrollWorkIntoView(page);
+  await inject(page);
+  await selectFig(page);
+  let f = await rect(page, FIG);
+  await drag(page, [f.cx, f.cy], [f.cx, f.cy + 40], { shift: true });
+  expect((await changes(page))[0].dy).toBe(40);
+  await copyAndSettle(page);
+
+  // A click without movement leaves the sent preview alone.
+  f = await rect(page, FIG);
+  await page.mouse.move(f.cx, f.cy); await page.mouse.down(); await page.mouse.up();
+  expect((await changes(page))[0]).toMatchObject({ dy: 40 });
+  expect(await page.evaluate(() => window.__nudge._state.changes[0].sent)).toBe(true);
+
+  // A real drag clears the sent change and records only the new movement.
+  f = await rect(page, FIG);
+  await drag(page, [f.cx, f.cy], [f.cx, f.cy + 20], { shift: true });
+  const recs = await page.evaluate(() => window.__nudge._state.changes.map((r) => ({ dy: r.dy, sent: r.sent })));
+  expect(recs).toEqual([{ dy: 20, sent: false }]);
+  await expect(status(page)).toContainText(FRESH);
+  const m = (await computed(page, FIG, 'transform')).match(/matrix\(([^)]+)\)/);
+  expect(Number(m[1].split(',')[5])).toBeCloseTo(20, 0);
+  await expect(page.locator('#nudge-copy')).toHaveText('Copy for Claude Code');
+
+  // Keyboard edits on a sent element follow the same rule.
+  await copyAndSettle(page);
+  await page.keyboard.press('ArrowDown');
+  expect(await page.evaluate(() => window.__nudge._state.changes.map((r) => ({ dy: r.dy, sent: r.sent })))).toEqual([{ dy: 1, sent: false }]);
+  await expect(status(page)).toContainText(FRESH);
+});
+
+test('28 stylesheet reload while changes are sent shows a warning and does not clear', async ({ page }) => {
+  await inject(page);
+  const reload = page.locator('#nudge-reload');
+  const replaceStyleText = () => page.evaluate(() => { const s = document.querySelector('head style'); s.textContent = s.textContent + '\n'; });
+
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  await replaceStyleText();                         // reload before anything is sent: no warning, now or after copying
+  await tick(page);
+  await expect(reload).toBeHidden();
+  await copyAndSettle(page);
+  await tick(page);
+  await expect(reload).toBeHidden();
+
+  // CSS-in-JS style injection is not a reload.
+  await page.evaluate(() => { const s = document.createElement('style'); s.textContent = '.x{}'; document.head.appendChild(s); s.appendChild(document.createTextNode('.y{}')); });
+  await tick(page);
+  await expect(reload).toBeHidden();
+
+  const preview = await cssText(page, TAGLINE);
+  await replaceStyleText();                         // Vite-style CSS hot update
+  await expect(reload).toBeVisible();
+  await expect(reload).toHaveText(RELOAD);
+  expect(await cssText(page, TAGLINE)).toBe(preview);   // not cleared automatically
+
+  await page.locator('#nudge-copy').click();         // Clear preview
+  await expect(reload).toBeHidden();
+
+  // webpack/Turbopack-style stylesheet link swap also counts.
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 50);
+  await copyAndSettle(page);
+  await page.evaluate(() => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'data:text/css,'; document.head.appendChild(l); });
+  await expect(reload).toBeVisible();
+});
+
+test('29 a computed max-width is not quoted as an authored rule', async ({ page }) => {
+  await inject(page);
+  await into(page, '[data-test=fluid]');
+  const maxW = await computed(page, '[data-test=fluid]', 'maxWidth');
+  expect(maxW).toMatch(/^\d+\.\d+px$/);
+  const capped = Math.round(parseFloat(maxW));
+  await select(page, '[data-test=fluid]');
+  await resizeE(page, '[data-test=fluid]', 100);
+  const text = await report(page);
+  expect(text).toContain(`width ${capped}px → ${capped + 100}px (the element was capped at ${capped}px by a computed max-width, check the source for the rule)`);
+  expect(text).not.toContain('was capped by max-width:');
+});
+
+test('30 keyboard shortcuts still work after clicking a panel button', async ({ page }) => {
+  await inject(page);
+  await select(page, TAGLINE);
+  await page.keyboard.press('ArrowDown');
+  await page.locator('#nudge-list button').first().click();      // undo keeps focus on a panel button
+  await select(page, '#rotated');
+  await page.keyboard.press('ArrowRight');
+  expect(await page.evaluate(() => window.__nudge._state.changes.map((r) => r.dx))).toEqual([1]);
+  await page.locator('#nudge-reset').click();
+  await select(page, '#rotated');
+  await page.keyboard.press('Escape');
+  expect(await selectedIs(page, null)).toBe(true);
 });

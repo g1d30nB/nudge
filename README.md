@@ -39,11 +39,15 @@ It works on any page in the browser, including a live site. The batch is only us
 - Hold **Option** while resizing to lock the aspect ratio, so the element scales instead of stretching. On the corner handle, whichever direction you move further drives the size and the other follows.
 - Arrow keys nudge 1px, Shift and an arrow nudges 10px. Backspace removes. Esc deselects.
 - Hold Shift while dragging to disable snapping. Release with Shift held and no alignment is recorded; the move is taken as exact.
-- Changes stay on the page until you copy or reset. Each change has its own undo.
-- **Copy for Claude Code** puts the batch on the clipboard. Paste it into your agent as the whole message.
+- Changes stay on the page as a preview. Each change has its own undo, and Reset clears them all.
+- **Copy for Claude Code** puts the batch on the clipboard and marks those changes as sent: their rows dim and show a tick. The preview stays on the page, so if the paste does not take you can press **Re-copy**. Paste the batch into your agent as the whole message.
+- Once your agent has applied the batch, press **Clear preview**. It removes nudge's preview so you see the page as your code now renders it.
+- Changes you make after copying are copied on their own next time, so the agent never receives the same change twice. If you drag an element that is already marked sent, nudge clears its preview first and starts again from the live page, and says so.
 - While nudge is open, links do not navigate and the right-click menu is suppressed. Close nudge before inspecting an element.
 
-Work a section, copy, let the agent apply it, check the reload, then move to the next section. Do not touch a second section before the first has been applied: the reload rebuilds the page and uncommitted drags are lost.
+Work a section, copy, let the agent apply it, clear the preview, check the result, then move to the next section.
+
+A hot reload that only swaps stylesheets leaves nudge's preview in place, which can make an agent's change look as if it worked when it did not. When that happens while changes are marked sent, the panel says "The page reloaded. Clear the preview to see the real result." A reload that rebuilds an element drops its preview instead.
 
 ## What it is good at
 
@@ -67,14 +71,14 @@ nudge batch · http://localhost:4321/ · viewport 1440×900 · 2026-09-14 10:00
    moved down 116px
    bottom edge aligned with bottom edge of section#how > div.wrap.split-inner > div.split-copy (src/components/Split.astro:9:5) "Built for the meeting you …a report nobody opens."
 
-Apply these in source CSS and markup, in the files named above where given.
+Apply these in source CSS and markup, in the files named above where given. Do not add inline styles.
 A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.
-A move with no alignment is a spacing intent: adjust margin or gap.
 Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.
-Removals delete the element from the markup. Do not add inline styles.
 ```
 
-Each entry names the element by its selector path and a snippet of its text, then lists what changed and what it now lines up with. The closing lines tell the agent how to translate those into CSS.
+Each entry names the element by its selector path and a snippet of its text, then lists what changed and what it now lines up with. The closing lines tell the agent how to translate those into CSS, and a batch only carries the lines that apply to it: no spacing guidance without an unaligned move, no removal guidance without a removal.
+
+When an element was held back by a max-width the browser computed, from a clamp or a percentage, the batch says the element was capped at that size by a computed max-width and asks the agent to check the source, rather than quoting a value like 725.328px as if someone had written it.
 
 The measurements and alignments are the same on every page. nudge takes them from the rendered layout, so nothing about your stack changes what it can capture.
 
@@ -94,7 +98,7 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 
 - One viewport per batch. Every measurement is stamped with the viewport it was taken at; the agent decides whether the rule generalises.
 - No write-back. nudge describes changes; it never edits files.
-- Uncommitted changes do not survive a hot reload.
+- A hot reload that rebuilds an element drops its preview. Copy before you save a file your dev server is watching.
 - Resize handles are right, bottom and corner only.
 - No text editing.
 - No multi-select.
@@ -135,7 +139,7 @@ npx playwright install chromium
 npm test
 ```
 
-Twenty-four headless Chromium checks in `tests/nudge.spec.mjs`, one per row of the GOOD table in `CONTRACT.md`, run against `tests/fixture.html`. The fixture is served from `https://nudge.test/` by a Playwright route so clipboard APIs exist; no server or certificate is needed.
+Thirty headless Chromium checks in `tests/nudge.spec.mjs`, one per row of the GOOD table in `CONTRACT.md`, run against `tests/fixture.html`. The fixture is served from `https://nudge.test/` by a Playwright route so clipboard APIs exist; no server or certificate is needed.
 
 ## Stack
 

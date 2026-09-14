@@ -35,11 +35,19 @@ python3 -m http.server 7357 --bind 127.0.0.1
 npm test
 ```
 
-Runs `node --check nudge.js` then the Playwright suite. 24/24 as of 13 Sep 2026, stable over `--repeat-each 3`. `window.__nudge._state` is a read-only test hook (selected, changes, candidates, drag, tool elements); it has no behavioural effect and stays in the shipped file.
+Runs `node --check nudge.js` then the Playwright suite. 30/30 as of 15 Sep 2026, stable over `--repeat-each 3`. `window.__nudge._state` is a read-only test hook (selected, changes, candidates, drag, tool elements); it has no behavioural effect and stays in the shipped file.
 
 ## Design decisions (locked for v1)
 
 - Mouse-up is not commit. Changes persist on the page; copy is the commit. Batch per section, not per page.
+- Copy marks changes as sent (dimmed row, tick, status "Sent. Clear the preview once your agent has applied it.") and never reverts, because a failed paste needs the preview to copy again. The primary button becomes Clear preview, which reverts sent changes through `undo`. Re-copy repeats the latest batch. Copy sends only unsent changes so the agent never receives a change twice.
+- The primary button is locked for 900ms after a copy and reads "Copied". Without it a double-click copies and then clears the preview before the paste.
+- Editing a sent element (drag, resize, arrows, Backspace) clears its sent change and starts a fresh record from the live page, with a status notice; its old baseline no longer exists in the code. Drags wait for real pointer movement before doing this, so clicking a sent element does not clear it.
+- Stylesheet reload detection is a `MutationObserver` on `document.head`. It counts replaced `<style>` text, removed style elements, added or removed stylesheet links and `href` changes; it ignores pure additions of `<style>` elements or rules, which CSS-in-JS does on every mount. The warning shows only when a sent change predates the reload (a reload counter, not a clock, because tests freeze the clock). It never clears automatically.
+- A computed max-width that is not a whole pixel is reported as computed ("capped at 725px by a computed max-width, check the source for the rule"). Whole-pixel and non-pixel values are quoted as before.
+- The footer prints only what the batch needs. "Do not add inline styles." is on the always-printed first line because it applies to every batch, not only removals.
+- The key handler lets panel text fields swallow keys but not panel buttons: buttons keep focus after a click because page mousedowns are cancelled, and blocking keys on them left shortcuts dead after any panel click.
+- Panel rows are built with `textContent`, never `innerHTML`, so page text containing markup renders as text.
 - Copy serialises final state only, not history. One line per touched element.
 - Snap detection runs during drag (guides) and again on release with 1px tolerance to record relationships. Relationships are the point: "bottom aligned with X" beats "moved 412px".
 - The batch text instructs the agent: aligned moves become layout rules (align-self, margin auto, grid), unaligned moves become margin/gap, no transforms, no inline styles, keep widths responsive.
@@ -57,7 +65,9 @@ Runs `node --check nudge.js` then the Playwright suite. 24/24 as of 13 Sep 2026,
 
 ## Known gaps
 
-- Uncommitted changes die on hot reload (by design, but could persist a report draft to sessionStorage).
+- A hot reload that rebuilds an element drops its preview (a CSS-only reload keeps it, and the panel warns). Could persist a report draft to sessionStorage.
+- "Was capped by max-width" is printed whenever the computed max-width is not `none`, even if the element was narrower than the cap. It should compare the element's width with the cap first.
+- Reload detection is a heuristic. A dev server that injects CSS by appending new `<style>` elements without removing old ones would not trigger the warning.
 - Text edits (change copy inline) not supported. design-loop has this; consider adding.
 - No multi-select.
 - No select-parent gesture; a padded wrapper can only be selected by clicking its padding.

@@ -23,6 +23,20 @@
     changes: new Map(),     // el -> record
     drag: null,
     candidates: [],
+    batch: 0,               // number of the most recent copied batch
+    reloadSeq: 0,           // bumped each time the page's stylesheets reload
+    notice: null,           // status prefix while re-recording a sent element
+    copyLock: false,        // brief lock after Copy so a double-click cannot clear the preview
+  };
+
+  const SENT = 'Sent. Clear the preview once your agent has applied it.';
+  const FRESH = 'Cleared the sent preview for this element; this change starts from the live page.';
+  const FOOTER = {
+    apply: 'Apply these in source CSS and markup, in the files named above where given. Do not add inline styles.',
+    aligned: 'A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.',
+    spacing: 'A move with no alignment is a spacing intent: adjust margin or gap.',
+    widths: 'Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.',
+    removals: 'Removals delete the element from the markup.',
   };
 
   /* ────────────────────────── helpers ────────────────────────── */
@@ -77,6 +91,10 @@
 
   function rec(el) {
     let r = state.changes.get(el);
+    if (r && r.sent) {
+      // The agent may already have applied this change, so its baseline no longer exists in the code.
+      undo(r); r = null; state.notice = FRESH;
+    }
     if (r) return r;
     const c = cs(el);
     const rect = el.getBoundingClientRect();
@@ -88,7 +106,8 @@
         display: el.style.display, transition: el.style.transition,
       },
       base: { w: rect.width, h: rect.height, maxW: c.maxWidth, maxH: c.maxHeight, cTransform: c.transform },
-      dx: 0, dy: 0, w: null, h: null, removed: false, locked: false, snaps: [],
+      dx: 0, dy: 0, w: null, h: null, removed: false, locked: false, snaps: [], moveAligned: false,
+      sent: false, sentBatch: 0, sentSeq: 0,
     };
     el.style.transition = 'none';
     state.changes.set(el, r);
@@ -136,7 +155,11 @@
     state.changes.delete(el);
   }
 
-  function resetAll() { [...state.changes.values()].forEach(undo); select(null); render(); }
+  const allRecs = () => [...state.changes.values()];
+  const sentRecs = () => allRecs().filter((r) => r.sent);
+  const unsentRecs = () => allRecs().filter((r) => !r.sent);
+
+  function resetAll() { allRecs().forEach(undo); state.notice = null; select(null); render(); }
 
   /* ────────────────────────── snapping ────────────────────────── */
 
@@ -296,15 +319,28 @@
       <span data-nudge id="nudge-status" style="color:#9c958b;flex:1">Click an element to start.</span>
       <button data-nudge id="nudge-close" title="Close (discards uncommitted changes)" style="background:none;border:0;color:#9c958b;font-size:16px;cursor:pointer;line-height:1">×</button>
     </div>
+    <div data-nudge id="nudge-reload" style="display:none;padding:8px 14px;background:#3a2f12;color:#f2c86b;border-bottom:1px solid #2c2a27;">The page reloaded. Clear the preview to see the real result.</div>
     <div data-nudge id="nudge-list" style="flex:1;overflow:auto;padding:6px 0;"></div>
     <div data-nudge style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid #2c2a27;align-items:center;">
       <button data-nudge id="nudge-copy" style="flex:1;background:#2f6fed;color:#fff;border:0;border-radius:6px;padding:8px 10px;font:600 12px system-ui;cursor:pointer">Copy for Claude Code</button>
+      <button data-nudge id="nudge-recopy" style="display:none;background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Re-copy</button>
       <button data-nudge id="nudge-reset" style="background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Reset</button>
     </div>
     <div data-nudge style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · shift disables snap · esc deselect</div>`;
 
   const $ = (id) => panel.querySelector('#' + id);
   const setStatus = (t) => { $('nudge-status').textContent = t; };
+  const withNotice = (t) => (state.notice ? (t ? `${state.notice} · ${t}` : state.notice) : t);
+  const idleStatus = () => (sentRecs().length && !unsentRecs().length ? SENT : 'Click an element to start.');
+
+  // Page text reaches the panel through textContent only, so markup in a snippet renders as text.
+  function node(tag, css, text) {
+    const n = document.createElement(tag);
+    n.setAttribute('data-nudge', '');
+    if (css) n.style.cssText = css;
+    if (text != null) n.textContent = text;
+    return n;
+  }
 
   function summary(r) {
     const bits = [];
@@ -322,32 +358,42 @@
   }
 
   function render() {
+    const sent = sentRecs(), unsent = unsentRecs();
+    $('nudge-copy').textContent = state.copyLock ? 'Copied' : (sent.length && !unsent.length ? 'Clear preview' : 'Copy for Claude Code');
+    $('nudge-recopy').style.display = sent.length ? '' : 'none';
+    $('nudge-reload').style.display = sent.some((r) => r.sentSeq < state.reloadSeq) ? 'block' : 'none';
+
     const list = $('nudge-list');
-    list.innerHTML = '';
-    const recs = [...state.changes.values()];
-    if (!recs.length) {
-      list.innerHTML = '<div data-nudge style="padding:10px 14px;color:#6f6a62">No changes yet.</div>';
-      return;
-    }
+    list.textContent = '';
+    const recs = allRecs();
+    if (!recs.length) { list.appendChild(node('div', 'padding:10px 14px;color:#6f6a62', 'No changes yet.')); return; }
     recs.forEach((r, i) => {
-      const row = document.createElement('div');
-      row.setAttribute('data-nudge', '');
-      row.style.cssText = 'padding:8px 14px;display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid #242220;';
-      row.innerHTML = `
-        <div data-nudge style="color:#6f6a62;width:14px;flex-shrink:0">${i + 1}</div>
-        <div data-nudge style="flex:1;min-width:0">
-          <div data-nudge style="color:#c9c2b7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${descriptor(r.el)}</div>
-          <div data-nudge>${summary(r)}</div>
-          ${r.snaps.map((s) => `<div data-nudge style="color:#e0447a">${s}</div>`).join('')}
-        </div>
-        <button data-nudge style="background:none;border:1px solid #3a3733;color:#9c958b;border-radius:5px;padding:2px 7px;font:11px system-ui;cursor:pointer">undo</button>`;
-      row.querySelector('button').addEventListener('click', () => { undo(r); if (state.selected === r.el) updateBoxes(); render(); });
+      const row = node('div', 'padding:8px 14px;display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid #242220;' + (r.sent ? 'opacity:.5;' : ''));
+      if (r.sent) row.setAttribute('data-sent', '');
+      row.appendChild(node('div', `width:14px;flex-shrink:0;color:${r.sent ? '#8fd18f' : '#6f6a62'}`, r.sent ? '✓' : String(i + 1)));
+      const body = node('div', 'flex:1;min-width:0');
+      body.appendChild(node('div', 'color:#c9c2b7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', descriptor(r.el)));
+      body.appendChild(node('div', '', summary(r)));
+      r.snaps.forEach((t) => body.appendChild(node('div', 'color:#e0447a', t)));
+      row.appendChild(body);
+      const btn = node('button', 'background:none;border:1px solid #3a3733;color:#9c958b;border-radius:5px;padding:2px 7px;font:11px system-ui;cursor:pointer', 'undo');
+      btn.addEventListener('click', () => { undo(r); if (state.selected === r.el) updateBoxes(); render(); });
+      row.appendChild(btn);
       list.appendChild(row);
     });
   }
 
-  function report() {
-    const recs = [...state.changes.values()];
+  // A max-width that is not a whole pixel came from clamp(), a percentage or similar. Quoting it as a rule
+  // invites the agent to hard-code it, so say it was computed instead.
+  function capNote(r) {
+    const m = r.base.maxW;
+    if (!m || m === 'none') return '';
+    const n = /^(\d+(?:\.\d+)?)px$/.exec(m);
+    if (n && !Number.isInteger(parseFloat(n[1]))) return ` (the element was capped at ${rnd(parseFloat(n[1]))}px by a computed max-width, check the source for the rule)`;
+    return ` (was capped by max-width: ${m})`;
+  }
+
+  function report(recs = allRecs()) {
     const lines = [];
     lines.push(`nudge batch · ${location.href} · viewport ${innerWidth}×${innerHeight} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`);
     lines.push('');
@@ -355,8 +401,7 @@
       lines.push(`${i + 1}. ${label(r.el)}`);
       if (r.removed) lines.push('   remove this element from the markup');
       if (r.w != null) {
-        const cap = r.base.maxW !== 'none' ? ` (was capped by max-width: ${r.base.maxW})` : '';
-        lines.push(`   width ${rnd(r.base.w)}px → ${rnd(r.w)}px${cap}`);
+        lines.push(`   width ${rnd(r.base.w)}px → ${rnd(r.w)}px${capNote(r)}`);
       }
       if (r.h != null) lines.push(`   height ${rnd(r.base.h)}px → ${rnd(r.h)}px`);
       const note = ratioNote(r);
@@ -370,25 +415,62 @@
       r.snaps.forEach((s) => lines.push(`   ${s}`));
       lines.push('');
     });
-    lines.push('Apply these in source CSS and markup, in the files named above where given.');
-    lines.push('A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.');
-    lines.push('A move with no alignment is a spacing intent: adjust margin or gap.');
-    lines.push('Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.');
-    lines.push('Removals delete the element from the markup. Do not add inline styles.');
+    // Only the guidance this batch needs.
+    const moved = (r) => !r.removed && (r.dx || r.dy);
+    lines.push(FOOTER.apply);
+    if (recs.some((r) => moved(r) && r.moveAligned)) lines.push(FOOTER.aligned);
+    if (recs.some((r) => moved(r) && !r.moveAligned)) lines.push(FOOTER.spacing);
+    if (recs.some((r) => !r.removed && (r.w != null || r.h != null))) lines.push(FOOTER.widths);
+    if (recs.some((r) => r.removed)) lines.push(FOOTER.removals);
     return lines.join('\n');
   }
 
-  async function copy() {
-    if (!state.changes.size) { setStatus('Nothing to copy yet.'); return; }
-    const text = report();
-    try { await navigator.clipboard.writeText(text); }
+  async function writeClipboard(text) {
+    try { await navigator.clipboard.writeText(text); return true; }
     catch (_) {
-      const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
-      ta.select(); document.execCommand('copy'); ta.remove();
+      const ta = node('textarea', 'position:fixed;top:0;left:0;opacity:0;');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+      ta.remove();
+      return ok;
     }
-    const b = $('nudge-copy'); const old = b.textContent;
-    b.textContent = 'Copied'; setStatus(`${state.changes.size} change${state.changes.size > 1 ? 's' : ''} on the clipboard. Paste into Claude Code.`);
-    setTimeout(() => { b.textContent = old; }, 1400);
+  }
+
+  // Copy sends only what has not been sent yet, so the agent never applies the same change twice.
+  // It does not revert: if the paste fails the user needs the preview to copy again.
+  async function copy() {
+    const recs = unsentRecs();
+    if (!recs.length) { setStatus('Nothing to copy yet.'); return; }
+    if (!(await writeClipboard(report(recs)))) { setStatus('Copy failed. Nothing was marked as sent.'); return; }
+    state.batch++;
+    recs.forEach((r) => { r.sent = true; r.sentBatch = state.batch; r.sentSeq = state.reloadSeq; });
+    state.notice = null;
+    state.copyLock = true;
+    render();
+    setStatus(SENT);
+    setTimeout(() => { state.copyLock = false; render(); }, 900);
+  }
+
+  async function recopy() {
+    let recs = sentRecs().filter((r) => r.sentBatch === state.batch);
+    if (!recs.length) recs = sentRecs();
+    if (!recs.length) return;
+    setStatus((await writeClipboard(report(recs))) ? 'Copied again. Clear the preview once your agent has applied it.' : 'Copy failed. Try again.');
+  }
+
+  function clearPreview() {
+    sentRecs().forEach(undo);
+    state.notice = null;
+    render(); updateBoxes();
+    setStatus('Preview cleared. This is the live page.');
+  }
+
+  function primary() {
+    if (state.copyLock) return;
+    if (unsentRecs().length) copy();
+    else if (sentRecs().length) clearPreview();
+    else setStatus('Nothing to copy yet.');
   }
 
   /* ────────────────────────── selection ────────────────────────── */
@@ -397,7 +479,7 @@
     state.selected = el;
     updateBoxes();
     if (el) setStatus(descriptor(el));
-    else setStatus('Click an element to start.');
+    else setStatus(idleStatus());
   }
 
   /* ────────────────────────── events ────────────────────────── */
@@ -425,24 +507,36 @@
 
   function onClick(e) { if (!isTool(e.target)) { e.preventDefault(); e.stopPropagation(); } }
 
-  function startMoveDrag(e) {
-    const el = state.selected, r = rec(el);
-    state.candidates = collectCandidates(el);
-    const b = el.getBoundingClientRect();
-    state.drag = { kind: 'move', startX: e.clientX, startY: e.clientY, dx0: r.dx, dy0: r.dy, rect: b, r };
+  // Bind the drag to a record and measure its starting geometry.
+  function prime(d) {
+    const r = rec(d.el);
+    const b = d.el.getBoundingClientRect();
+    state.candidates = collectCandidates(d.el);
+    d.r = r;
+    if (d.kind === 'move') { d.dx0 = r.dx; d.dy0 = r.dy; d.rect = b; }
+    else { d.w0 = b.width; d.h0 = b.height; d.left = b.left; d.top = b.top; }
+  }
+
+  function startDrag(e, d) {
+    d.el = state.selected; d.startX = e.clientX; d.startY = e.clientY; d.r = null;
+    state.notice = null;
+    const existing = state.changes.get(d.el);
+    // A click on a sent element must not clear its preview, so wait for real movement before re-recording it.
+    if (!(existing && existing.sent)) prime(d);
+    state.drag = d;
     document.body.style.userSelect = 'none';
   }
 
-  function startResize(e, handle) {
-    const el = state.selected, r = rec(el);
-    const b = el.getBoundingClientRect();
-    state.candidates = collectCandidates(el);
-    state.drag = { kind: 'resize', handle, startX: e.clientX, startY: e.clientY, w0: b.width, h0: b.height, left: b.left, top: b.top, r };
-    document.body.style.userSelect = 'none';
-  }
+  function startMoveDrag(e) { startDrag(e, { kind: 'move' }); }
+  function startResize(e, handle) { startDrag(e, { kind: 'resize', handle }); }
 
   function dragMove(e) {
-    const d = state.drag, r = d.r;
+    const d = state.drag;
+    if (!d.r) {
+      if (e.clientX === d.startX && e.clientY === d.startY) return;
+      prime(d);
+    }
+    const r = d.r;
     const ddx = e.clientX - d.startX, ddy = e.clientY - d.startY;
     if (d.kind === 'move') {
       let dx = d.dx0 + ddx, dy = d.dy0 + ddy;
@@ -455,7 +549,7 @@
       }
       r.dx = rnd(dx); r.dy = rnd(dy); d.shift = e.shiftKey;
       apply(r); showGuides(s); updateBoxes();
-      setStatus(summary(r));
+      setStatus(withNotice(summary(r)));
     } else {
       const s = { x: null, y: null, match: null };
       d.shift = e.shiftKey;
@@ -488,7 +582,7 @@
         }
       }
       apply(r); showGuides(s); updateBoxes();
-      setStatus(summary(r));
+      setStatus(withNotice(summary(r)));
     }
   }
 
@@ -498,41 +592,73 @@
     state.drag = null;
     document.body.style.userSelect = '';
     showGuides(null);
-    finish(r, shift);
+    if (r) finish(r, shift);
   }
 
   function finish(r, exact) {
     if (!exact && !r.removed) state.candidates = collectCandidates(r.el);
-    r.snaps = (exact || r.removed) ? [] : [...((r.dx || r.dy) ? relationships(r) : []), ...sizeRelationships(r)];
+    const moves = (exact || r.removed || !(r.dx || r.dy)) ? [] : relationships(r);
+    const sizes = (exact || r.removed) ? [] : sizeRelationships(r);
+    r.snaps = [...moves, ...sizes];
+    r.moveAligned = moves.length > 0;
     prune(r);
     render();
     updateBoxes();
   }
 
   function onKey(e) {
-    if (isTool(e.target) && /INPUT|TEXTAREA|BUTTON/.test(e.target.tagName)) return;
+    // Panel buttons keep focus after a click because page mousedowns are cancelled, so only text fields may swallow keys.
+    if (isTool(e.target) && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
     if (e.key === 'Escape') { select(null); return; }
     if (!state.selected) return;
     if (e.key === 'Backspace' || e.key === 'Delete') {
       e.preventDefault();
+      state.notice = null;
       const r = rec(state.selected); r.removed = true; apply(r);
-      finish(r); select(null); return;
+      finish(r); select(null);
+      if (state.notice) setStatus(state.notice);
+      return;
     }
     const step = e.shiftKey ? 10 : 1;
     const map = { ArrowUp: [0, -step], ArrowDown: [0, step], ArrowLeft: [-step, 0], ArrowRight: [step, 0] };
     if (map[e.key]) {
       e.preventDefault();
+      state.notice = null;
       const r = rec(state.selected);
       state.candidates = collectCandidates(state.selected);
       r.dx += map[e.key][0]; r.dy += map[e.key][1];
       apply(r); finish(r);
-      setStatus(summary(r) || descriptor(state.selected));
+      setStatus(withNotice(summary(r) || descriptor(state.selected)));
     }
   }
 
   function onScroll() { updateBoxes(); hoverBox.style.display = 'none'; }
 
   function onContext(e) { if (!isTool(e.target)) e.preventDefault(); }
+
+  // A CSS-only hot reload keeps the DOM node, so nudge's inline styles survive it and hide whether the
+  // agent's change worked. Vite replaces a style element's text; webpack and Turbopack swap stylesheet
+  // links. Pure additions of style elements or rules are what CSS-in-JS does on every mount, so they
+  // do not count.
+  const isSheet = (n) => !!n && n.nodeType === 1 &&
+    (n.tagName === 'STYLE' || (n.tagName === 'LINK' && /(^|\s)stylesheet(\s|$)/i.test(n.getAttribute('rel') || '')));
+
+  function stylesheetsReloaded(muts) {
+    for (const m of muts) {
+      if (m.type === 'attributes') { if (isSheet(m.target)) return true; continue; }
+      if (m.type === 'characterData') { if (isSheet(m.target.parentNode)) return true; continue; }
+      if (isSheet(m.target)) { if (m.removedNodes.length) return true; continue; }
+      if ([...m.removedNodes].some(isSheet)) return true;
+      if ([...m.addedNodes].some((n) => isSheet(n) && n.tagName === 'LINK')) return true;
+    }
+    return false;
+  }
+
+  const headObserver = new MutationObserver((muts) => {
+    if (!stylesheetsReloaded(muts)) return;
+    state.reloadSeq++;
+    render(); updateBoxes();
+  });
 
   /* ────────────────────────── mount / destroy ────────────────────────── */
 
@@ -548,7 +674,9 @@
 
   document.documentElement.appendChild(overlay);
   document.documentElement.appendChild(panel);
-  $('nudge-copy').addEventListener('click', copy);
+  if (document.head) headObserver.observe(document.head, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'media', 'disabled'] });
+  $('nudge-copy').addEventListener('click', primary);
+  $('nudge-recopy').addEventListener('click', recopy);
   $('nudge-reset').addEventListener('click', resetAll);
   $('nudge-close').addEventListener('click', () => window.__nudge.destroy());
   render();
@@ -556,6 +684,7 @@
   window.__nudge = {
     destroy() {
       resetAll();
+      headObserver.disconnect();
       document.removeEventListener('mousemove', onMove, opts);
       document.removeEventListener('mousedown', onDown, opts);
       document.removeEventListener('mouseup', onUp, opts);
@@ -574,6 +703,8 @@
       get changes() { return [...state.changes.values()]; },
       get candidates() { return state.candidates; },
       get drag() { return state.drag; },
+      get batch() { return state.batch; },
+      get reloadSeq() { return state.reloadSeq; },
       els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles },
     },
   };

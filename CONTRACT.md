@@ -38,15 +38,21 @@ All pass/fail. No subjective checks.
 | 13 | Scroll | Scroll 400px, select an element below the fold, resize +100px → recorded width correct; selection box tracks element after further scroll |
 | 14 | Existing transform | Move an element with `transform: rotate(3deg)` → computed transform still includes the rotation; undo restores exactly |
 | 15 | Escape | Escape clears selection; selection box hidden |
-| 16 | Copy | Click Copy → clipboard text equals `window.__nudge.report()`; button reads "Copied" |
+| 16 | Copy | Click Copy → clipboard text equals `window.__nudge.report()`; button reads "Copied" (amended 15 Sep 2026: it then becomes "Clear preview", see 25) |
 | 17 | Astro source attr | Element with `data-astro-source-file="/abs/path/src/pages/index.astro"` and `data-astro-source-loc="46:13"` → report line contains `(src/pages/index.astro:46:13)` |
-| 18 | Report footer | Report ends with the five instruction lines verbatim as written in `report()` |
+| 18 | Report footer | Amended 15 Sep 2026. Footer is the first line plus only what the batch needs: resize only → apply + widths; unaligned move → apply + spacing; removal only → apply + removals; aligned move → apply + aligned; all together → all five in order. The first line always carries "Do not add inline styles." |
 | 19 | Resize edge snap | Drag E handle of `.card-a` until its right edge is within 4px of `.card-b`'s right edge → `abs(a.right − b.right) ≤ 1`; vertical guide visible at the last drag step; report contains `right edge aligned with right edge of` + card-b's descriptor; no `matches` line |
 | 20 | Resize width match | Drag E handle until width is within 4px of `.card-b`'s width → `abs(a.width − b.width) ≤ 1`; dashed match box visible over card-b (live rect within 1px) at the last step; report contains `width matches width of` + descriptor, then the label's snippet, then `(520px)`; no `aligned` line |
 | 21 | Shift disables resize snap | Same drag as 20 with Shift → width exactly as dragged; no guide or match box at any step; no `aligned` or `matches` line |
 | 22 | Aspect lock, E handle | Alt-drag E handle of a 320×80 image +120px → final `width/height` within 0.05 of 4.0; report matches `aspect ratio kept, scaled to N%`; no `distorts` line. Repeat with Control after Reset → ratio still within 0.05 |
 | 23 | Aspect lock, corner | Alt-drag SE handle by (160, 10) → width grew more than 100px (the dominant axis drove) and ratio within 0.05 of 4.0 |
 | 24 | Distortion warning | Same E drag with no modifier → height unchanged, ratio above 4.2, report matches `aspect ratio changed from 4.00:1 to N.NN:1; this distorts the image`; no `aspect ratio kept` line |
+| 25 | Sent state | Resize, Copy → button reads "Copied" and ignores clicks, then "Clear preview"; status is exactly "Sent. Clear the preview once your agent has applied it."; element's inline styles unchanged; its row has `data-sent`, a ✓ and opacity below 1; Re-copy visible. Clear preview → `style.cssText` equals the original, list reads "No changes yet.", Re-copy hidden, button reads "Copy for Claude Code" |
+| 26 | Re-copy and new changes | After Copy, overwrite the clipboard, press Re-copy → clipboard equals the first copy (fixed clock). A new change makes the button "Copy for Claude Code" again, and that copy contains only the new element |
+| 27 | Editing a sent element | Move `figure` 40px with Shift, Copy. Mouse down and up on it without moving → still sent with dy 40. Drag 20px with Shift → exactly one record, `{dy: 20, sent: false}`, computed translate ≈ 20, status contains "Cleared the sent preview for this element; this change starts from the live page." Copy, then ArrowDown → `{dy: 1, sent: false}` with the same status |
+| 28 | Reload warning | Replacing head `<style>` text before Copy shows no warning, before or after copying. Appending a new `<style>` and a text node to it (CSS-in-JS) shows no warning. Replacing style text after Copy → `#nudge-reload` visible with text "The page reloaded. Clear the preview to see the real result." and inline styles unchanged. Clear preview hides it. Adding a `<link rel=stylesheet>` after a later Copy shows it |
+| 29 | Computed max-width | Element with `max-width: clamp(200px, 33.37vw, 900px)` (computed as a fractional px) resized +100 → report contains `width Npx → N+100px (the element was capped at Npx by a computed max-width, check the source for the rule)` and no `was capped by max-width:` |
+| 30 | Keys after panel clicks | Click a row's undo, select an element, ArrowRight → dx 1. Click Reset, select, Escape → nothing selected |
 
 ## Test Plan
 
@@ -91,6 +97,14 @@ Keys are Option, Command **and** Control, all meaning lock. Control alone was th
 On the corner handle the larger of the two movements drives and the other dimension follows. The ratio is taken at drag start, not from the original element, so locking after a deliberate distortion preserves the current shape, as in Figma and Sketch.
 
 24/24, no failures on the first run, stable over `--repeat-each 3`.
+
+## Copy as send, reload warning, computed values, conditional footer (added 15 Sep 2026, checks 25–30)
+
+Four changes from using the published bookmarklet on a real Next.js and Tailwind site. Copy now marks changes as sent instead of leaving no trace, and Clear preview reverts them; the button is locked for 900ms after a copy so a double-click cannot copy and revert in one go. Copy sends only unsent changes, so a change is never sent twice; Re-copy repeats the latest batch. Editing a sent element, by drag or keyboard, clears its sent change and records afresh from the live page, but only once the pointer actually moves, so a click does not clear it. A stylesheet reload while changes are sent shows a warning and never clears. A fractional-pixel computed max-width is described as computed. The footer prints only the guidance the batch needs, and "Do not add inline styles." moved to the always-printed first line because it applies to every batch.
+
+First run: check 18 failed as expected (it asserted five lines). Then 18, 26 and 27 failed together on a pre-existing bug: panel buttons keep focus after a click because page mousedowns are cancelled, and the key handler ignored keys while a button had focus, so arrows, Backspace and Escape went dead after any Copy, Reset or undo. Check 30 covers it. Panel rows also switched from `innerHTML` to `textContent`, so page text containing markup renders as text.
+
+30/30, stable over `--repeat-each 3`.
 
 ## Expected first failures
 

@@ -28,6 +28,8 @@
   .card-b { width: 520px; margin-left: 80px; }
   #media { padding: 40px; }
   #media img { display: block; background: #cdd6e4; }
+  #fluid { padding: 40px; }
+  .fluid-box { max-width: clamp(200px, 33.37vw, 900px); padding: 12px; box-sizing: border-box; background: #eadbd0; }
   #tail { height: 700px; }
 </style>
 </head>
@@ -83,6 +85,10 @@
 <section id="media">
   <img data-test="logo" alt="Four client logos in one image" style="width:320px;height:80px"
        src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='80'%3E%3C/svg%3E">
+</section>
+
+<section id="fluid">
+  <div class="fluid-box" data-test="fluid">A box capped by a fluid max-width.</div>
 </section>
 
 <div id="tail"></div>
