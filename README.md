@@ -101,6 +101,14 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 - No gesture to select an element's parent.
 - Pages with a Content-Security-Policy that blocks external scripts refuse the loader, and the bookmark does nothing.
 
+## Early days
+
+nudge changes nothing on disk. Everything it does is inline styles on the page in front of you; Reset or a refresh clears them.
+
+The change that lands in your code is the one your agent makes from the batch. Commit before you paste it, and read the diff, the same as any other agent edit.
+
+This is a few days old and built around one person's workflow. Expect rough edges. If something breaks, or the batch was not precise enough for your agent to act on, open an issue and say what stack you were on. That is the most useful thing anyone can send.
+
 ## Contributing
 
 Suggestions and pull requests are welcome. [Open issues](https://github.com/g1d30nB/nudge/issues) list the known gaps, and some are marked as good first issues.
