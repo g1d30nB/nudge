@@ -6,7 +6,7 @@ Public repo: https://github.com/g1d30nB/nudge (MIT). Install page: https://g1d30
 
 ## Files
 
-- `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr (`cdn.jsdelivr.net/gh/g1d30nB/nudge@main/nudge.js`); the development bookmarklet loads it from 127.0.0.1:7357.
+- `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr pinned to a release tag (`cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.0.0/nudge.js`); the development bookmarklet, used while building, loads it from 127.0.0.1:7357.
 - `bookmarklet.txt`: both loaders, labelled.
 - `docs/nudge-demo.gif`: the README demo. Recorded on a throwaway wireframe page that is not in the repo (kept locally in `demo/`, gitignored). Keep it under about 5MB.
 - `docs/index.html`: install page with the draggable `javascript:` link, served by GitHub Pages. GitHub strips `javascript:` links from rendered READMEs, which is why this page exists.
@@ -27,7 +27,11 @@ python3 -m http.server 7357 --bind 127.0.0.1
 
 ## Publishing
 
-`main` is live the moment it is pushed: jsDelivr serves `@main`, and every installed bookmark loads it. jsDelivr caches branch references for up to 12 hours; purge with `curl https://purge.jsdelivr.net/gh/g1d30nB/nudge@main/nudge.js` after a push that matters. Run `npm test` before every push to `main`.
+Installed bookmarks load `cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.0.0/nudge.js`, pinned to the `v1.0.0` tag. Pushes to `main` do not reach them. `main` still publishes the install page (GitHub Pages from `/docs`) and the README.
+
+While building, use the development bookmarklet in `bookmarklet.txt`. It loads `nudge.js` from 127.0.0.1:7357, so serve this folder first.
+
+Shipping a change was meant to mean moving the tag. That does not work with jsDelivr: its documentation says files at an exact version are stored permanently "with no option or way to update the contents of that file", and purging "will not work for static files". A moved `v1.0.0` tag never reaches installed bookmarks. With the loader pinned to an exact tag, shipping is: run `npm test`, tag a new version (`v1.0.1`), push the tag, point `docs/index.html`, `bookmarklet.txt` and the README install line at it, push `main`, and reinstall the bookmark. To ship without reinstalling, the loader would have to use a range such as `@1`, which resolves to the newest `v1.x.x` tag, is cached for 7 days and can be purged with `curl https://purge.jsdelivr.net/gh/g1d30nB/nudge@1/nudge.js`. Never move or delete a published tag either way.
 
 ## Test
 

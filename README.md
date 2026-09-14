@@ -12,6 +12,12 @@ When you build a site with an agent, the last stretch is small visual correction
 
 nudge replaces the sentence with measurements.
 
+## What it is for
+
+nudge is not where you design. It is where you correct.
+
+It exists for the last stretch: the subhead capped too narrow, the image half a line off the text beside it, the gap that should match the one above. Everything it does is a small correction to something that already exists.
+
 ## How it works
 
 You drag on the running page. nudge records what changed and what it lined up with. You copy a batch of plain text and paste it into your agent, and the agent edits the source.
@@ -25,7 +31,7 @@ Go to the [install page](https://g1d30nb.github.io/nudge/) and drag the link to 
 There is no clone, no server, no npm, and nothing is added to your project. The bookmark loads `nudge.js` from jsDelivr when you click it. If you would rather make the bookmark by hand, paste this line as its URL:
 
 ```
-javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@main/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
+javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.0.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
 ```
 
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.
@@ -53,7 +59,7 @@ A hot reload that only swaps stylesheets leaves nudge's preview in place, which 
 
 Precise small corrections, batched per section: a subhead capped too narrow, an image that should sit on the same baseline as the copy beside it, a card that should match its neighbour's width, an element that should not be there.
 
-It does not design anything, and it does not replace the agent. It tells the agent exactly what you want, and the agent still has to work out how to express that in your code.
+It tells the agent exactly what you want, and the agent still has to work out how to express that in your code.
 
 ## What the batch contains
 
