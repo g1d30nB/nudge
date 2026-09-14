@@ -8,9 +8,8 @@ Public repo: https://github.com/g1d30nB/nudge (MIT). Install page: https://g1d30
 
 - `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr (`cdn.jsdelivr.net/gh/g1d30nB/nudge@main/nudge.js`); the development bookmarklet loads it from 127.0.0.1:7357.
 - `bookmarklet.txt`: both loaders, labelled.
-- `docs/nudge-demo.gif`: the README demo, recorded on `demo/index.html`. Re-record rather than edit; keep it under about 5MB.
+- `docs/nudge-demo.gif`: the README demo. Recorded on a throwaway wireframe page that is not in the repo (kept locally in `demo/`, gitignored). Keep it under about 5MB.
 - `docs/index.html`: install page with the draggable `javascript:` link, served by GitHub Pages. GitHub strips `javascript:` links from rendered READMEs, which is why this page exists.
-- `demo/index.html`: fictional wireframe marketing page for recording the demo GIF. Two deliberate flaws (`.hero-subhead` max-width, `.split-media` top alignment) and faked `data-astro-source-*` attributes. Keep class names stable; the batch output on camera depends on them.
 - `LICENSE`: MIT.
 - `README.md`: usage and limits.
 - `CONTRACT.md`: the v1 contract plus extensions: DONE, the 24 GOOD checks, test plan, outcomes.
