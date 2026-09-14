@@ -2,8 +2,7 @@
 
 Drag on the running page, then paste the measurements into your coding agent.
 
-<!-- TODO: record the demo GIF on demo/index.html (serve the folder, open http://localhost:7357/demo/) and save it as docs/demo.gif. -->
-![nudge resizing a hero subhead and bottom-aligning an image on a demo page](docs/demo.gif)
+![nudge widening a capped headline on a demo page, then Claude Code applying the batch to the source](docs/nudge-demo.gif)
 
 ## The problem
 
