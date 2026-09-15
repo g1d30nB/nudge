@@ -72,6 +72,8 @@ All pass/fail. No subjective checks.
 | 47 | Picker fallback | Picker `#3a7bd5` → `colour var(--ink-muted) → #3a7bd5 (no token matched this value, check whether one should exist)`. Picker `#2f6fed` equals `--accent` → reported and previewed as `var(--accent)` |
 | 48 | No tokens | With the :root rule removed: `No custom properties are declared on :root.`, no swatches, picker and warning visible; picking `#123456` → `colour #222222 (no token) → #123456 (no token matched this value, check whether one should exist)` |
 | 49 | Type steppers | Stepper arrows are hidden at rest and appear on hover or focus. Clicking up four times from 17px snaps through 20px to 21px with the match line; Shift-click +10; Alt-click −0.1. Clicking a stepper keeps focus in a focused field and ArrowUp still steps. Holding a stepper repeats. The element never moves |
+| 50 | Max-width note only when capped | Resizing an element 300px wide with `max-width: 800px` reports `width 300px → 400px` with no cap note. Resizing an element held at 300px by `max-width: 50%` reports `width 300px → 400px (was capped by max-width: 50%)`. Undo leaves `style.cssText` empty, so the measurement leaves no trace |
+| 51 | Unit equivalents | An element with `font-size: 2rem; letter-spacing: -0.035em` shows 32 and −1.12. Stepping letter spacing reports `letter spacing -1.12px → -0.12px` then `as em of the font size: -0.035em → -0.0038em`. Stepping font size reports `font size 32px → 33px` immediately followed by `as rem at a 16px root: 2rem → 2.0625rem`, and the em line is recomputed against 33px |
 
 ## Test Plan
 
@@ -150,6 +152,12 @@ Text colour for elements with their own text; background colour only where a bac
 Small up and down arrows inside each type field, shown on hover or focus like a browser's own number field, so the panel at rest is unchanged. They share the arrow keys' step and snapping rules, repeat when held and keep focus in the field. Numbered 49 because the unmerged `feat/colour` branch uses 43–48.
 
 First run failed on a real bug: when a step landed on a match, the match line appeared under the fields, and because the panel is anchored to the bottom the fields jumped up from under the pointer, so the next click missed and held repeats stopped. The match line now keeps its space and toggles visibility. No existing test changed. 43/43, stable over `--repeat-each 3`.
+
+## Batch accuracy (added 15 Sep 2026, branch fix/batch-accuracy, checks 50–51)
+
+Two errors carried into v1.1.0. The max-width note was printed whenever an element had any max-width; the record now lifts the max-width for one synchronous measurement and keeps the note only if the element would otherwise be wider, which covers px, %, calc() and clamp(). Type values were printed only as computed pixels; font size now adds its rem equivalent at the page's real root size and letter spacing its em equivalent, on separate lines so existing batch lines are unchanged. Checked against hubiq.co.uk, whose source sets `.h-hero{letter-spacing:-.035em}`: the batch now reports `-0.035em`.
+
+First run: one failure, a test arithmetic mistake (−0.12 / 32 rounds to −0.0038 in floating point). No existing test changed. 51/51, stable over `--repeat-each 3`.
 
 ## Expected first failures
 

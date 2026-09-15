@@ -2,6 +2,13 @@
 
 Installed bookmarks are pinned to a release. To get a new release, reinstall the bookmark from the [install page](https://g1d30nb.github.io/nudge/).
 
+## Unreleased
+
+### Fixed
+
+- The batch no longer says an element "was capped by max-width" when it was narrower than its cap. nudge now checks whether the max-width was actually holding the width down, whatever unit it is written in.
+- Font size and letter spacing are no longer reported only as computed pixels. Each now comes with a second line giving the rem or em equivalent, so an agent editing a stylesheet written in rem or em keeps its units.
+
 ## v1.1.0, 15 September 2026
 
 ### Added

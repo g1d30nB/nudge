@@ -111,7 +111,7 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 - Resize handles are right, bottom and corner only.
 - Text editing is plain text only, in elements with no child elements.
 - No font family control. nudge cannot see which fonts are installed or loaded.
-- Type values are read from the rendered page, so they are always in pixels even when the source uses rem, em or clamp. Line height also gives its ratio to the font size.
+- Type values are read from the rendered page, so they are measured in pixels even when the source uses rem, em or clamp. The batch adds the rem equivalent for font size, the em equivalent for letter spacing and the ratio for line height, so the agent can match the source's units. A clamp() cannot be recovered.
 - The colour palette only lists tokens declared on `:root`. Tokens in stylesheets served from another site cannot be read.
 - No multi-select.
 - No gesture to select an element's parent.
