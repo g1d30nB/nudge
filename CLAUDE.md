@@ -52,6 +52,12 @@ Runs `node --check nudge.js` then the Playwright suite. 30/30 as of 15 Sep 2026,
 - The footer prints only what the batch needs. "Do not add inline styles." is on the always-printed first line because it applies to every batch, not only removals.
 - The key handler lets panel text fields swallow keys but not panel buttons: buttons keep focus after a click because page mousedowns are cancelled, and blocking keys on them left shortcuts dead after any panel click.
 - Panel rows are built with `textContent`, never `innerHTML`, so page text containing markup renders as text.
+- Text editing: double-click a selected element. Refused, with the reason in the status line, when the element has child elements. Comment nodes are allowed (React inserts `<!-- -->` inside text). `contentEditable="plaintext-only"` plus guards on Enter, `format*` and structural input types, paste (plain text, whitespace collapsed) and drop. Escape or any mousedown outside the element commits; mousedowns inside are left native so the caret works. While editing, the key handler passes every key through except Escape and Enter. Original child nodes are cloned when editing starts and restored by undo, Reset and Clear preview.
+- Text lines use the descriptor truncation (first 26 and last 22 characters). When that makes old and new identical, both are shown as a window around the first difference instead.
+- Type controls: size, line height, letter spacing, weight, shown only when the selected element has its own text. No font family: nudge cannot see installed or loaded fonts. Arrows 1, Shift 10, Alt 0.1 (weight 100 / 100 / 10). Plain and Shift steps snap to other visible text elements within tolerance and never to the value being left; Alt never snaps, so fine control next to a match stays possible. Same-tag elements win ties. Batch lines are one per property with before and after, plus `(now matches .lede)`; line height also gives the ratio to font size because computed line height is always px.
+- Type candidates are collected once per selection. Base values are read on the first type change for the record, all four at once, because a unitless line height changes in px when font size changes.
+- Page mousedowns blur any focused panel field before selecting, otherwise arrows keep stepping type after the user has clicked a different element.
+- A field's change event that does not change the value must not re-render: rebuilding rows under the pointer swallows the click that caused the blur.
 - Copy serialises final state only, not history. One line per touched element.
 - Snap detection runs during drag (guides) and again on release with 1px tolerance to record relationships. Relationships are the point: "bottom aligned with X" beats "moved 412px".
 - The batch text instructs the agent: aligned moves become layout rules (align-self, margin auto, grid), unaligned moves become margin/gap, no transforms, no inline styles, keep widths responsive.
@@ -72,7 +78,6 @@ Runs `node --check nudge.js` then the Playwright suite. 30/30 as of 15 Sep 2026,
 - A hot reload that rebuilds an element drops its preview (a CSS-only reload keeps it, and the panel warns). Could persist a report draft to sessionStorage.
 - "Was capped by max-width" is printed whenever the computed max-width is not `none`, even if the element was narrower than the cap. It should compare the element's width with the cap first.
 - Reload detection is a heuristic. A dev server that injects CSS by appending new `<style>` elements without removing old ones would not trigger the warning.
-- Text edits (change copy inline) not supported. design-loop has this; consider adding.
 - No multi-select.
 - No select-parent gesture; a padded wrapper can only be selected by clicking its padding.
 - Resize handles are E, S and SE only. W and N handles imply a move as well as a resize, so the batch would need to describe both.
