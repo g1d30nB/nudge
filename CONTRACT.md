@@ -65,6 +65,12 @@ All pass/fail. No subjective checks.
 | 40 | Modifiers and lines | Shift+ArrowUp +10; Alt+ArrowDown −0.1 without snapping; letter spacing Alt+ArrowUp from normal to 0.1; weight ArrowUp 400 → 500. Each changed property is its own batch line with before and after |
 | 41 | Typed value and undo | Typing 30 in line height + Enter → computed 30px, batch `line height 25.5px → 30px, 1.5 → 1.76 × font size (now matches .type-lede)` (same-tag preference on ties). Typing weight 700 matches `.type-title`. Clicking the row's undo straight after restores `style.cssText` exactly |
 | 42 | Focus returns to the page | After stepping a field, clicking another element and pressing ArrowDown moves that element and does not change type |
+| 43 | Colour relevance | A token-coloured card with a background shows text and background chips; a box with no background shows only the text chip; a wrapper with no own text and no background and an image show no property controls |
+| 44 | Palette from :root | Chips read `text --ink-muted` and `background --surface-2`. Opening the text chip lists exactly the six colour tokens declared on :root (a length token is excluded) and marks only `--ink-muted` as the match. The palette precedes the picker |
+| 45 | Choose a token | Clicking `--ink` previews `color: var(--ink)` (computed rgb(31, 33, 36)); choosing `--surface` for the background; batch lines `colour var(--ink-muted) → var(--ink)` and `background colour var(--surface-2) → var(--surface)`, footer apply + colour. Undo restores `style.cssText` |
+| 46 | Shared values | Text in `var(--ink)`, where `--alias-ink` has the same value, shows `text --ink +1`, marks both swatches, and reports `colour var(--ink) or var(--alias-ink) → var(--accent)` |
+| 47 | Picker fallback | Picker `#3a7bd5` → `colour var(--ink-muted) → #3a7bd5 (no token matched this value, check whether one should exist)`. Picker `#2f6fed` equals `--accent` → reported and previewed as `var(--accent)` |
+| 48 | No tokens | With the :root rule removed: `No custom properties are declared on :root.`, no swatches, picker and warning visible; picking `#123456` → `colour #222222 (no token) → #123456 (no token matched this value, check whether one should exist)` |
 
 ## Test Plan
 
@@ -131,6 +137,12 @@ Four fields (size, line height, letter spacing, weight) for a selected element w
 First run: three failures. Two were test assumptions (the fixture body sets line-height 1.5, so 17px text computes to 25.5px rather than `normal`; a click at the wrapper's corner hit its child). One was real: a typed value matched the first element in document order instead of preferring the same tag. A second real bug followed: the change event fired on blur re-rendered the rows under the pointer and swallowed the click on a row's undo; no-op changes no longer re-render. Line height lines also gained the ratio to font size, because computed line height is always in pixels even when the source is unitless. No existing test changed. 42/42, stable over `--repeat-each 3`.
 
 Both branches were committed and merged before their contract and CLAUDE.md entries were written, because a shell chain stopped early; these entries were added afterwards on `docs/text-and-type`.
+
+## Token-aware colour (15 Sep 2026, branch feat/colour, checks 43–48, NOT MERGED)
+
+Text colour for elements with their own text; background colour only where a background already exists. Tokens are the custom properties declared on `:root` (including inside @media, @supports and @layer), resolved against the rendered page and converted to sRGB bytes by painting a pixel, so any colour space compares. Choosing a token previews `var(--token)`; the picker is a fallback that reports a token when its value matches one and says no token matched otherwise.
+
+48/48 on the first run, stable over `--repeat-each 3`, no existing test changed. Held back from main on the restraint rule: with a palette open the panel stacks four labelled type fields, colour chips, a swatch grid, a picker and a warning, about 400px tall on a real token set, which reads as an inspector.
 
 ## Expected first failures
 
