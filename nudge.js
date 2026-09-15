@@ -29,6 +29,8 @@
     copyLock: false,        // brief lock after Copy so a double-click cannot clear the preview
     editing: null,          // { el, r, attr, userSelect } while an element's text is being edited
     typeCands: null,        // other text elements' type values, collected once per selection
+    tokens: null,           // colour tokens read from :root, once per selection
+    palette: null,          // which colour property's palette is open: 'color' | 'backgroundColor'
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -39,6 +41,7 @@
     spacing: 'A move with no alignment is a spacing intent: adjust margin or gap.',
     widths: 'Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.',
     type: 'A type change that matches another element should share that element\'s type style or token rather than repeat the value; an unmatched value may need a new step in the type scale.',
+    colour: 'A colour change names a design token: use that token. A value with no token is a question for the design system, not an instruction to hard-code it.',
     text: 'A text change replaces the old string with the new one wherever that copy lives: markup, a component, a content file or a translation.',
     removals: 'Removals delete the element from the markup.',
   };
@@ -126,11 +129,12 @@
         display: el.style.display, transition: el.style.transition,
         fontSize: el.style.fontSize, lineHeight: el.style.lineHeight,
         letterSpacing: el.style.letterSpacing, fontWeight: el.style.fontWeight,
+        color: el.style.color, backgroundColor: el.style.backgroundColor,
       },
       base: { w: rect.width, h: rect.height, maxW: c.maxWidth, maxH: c.maxHeight, cTransform: c.transform },
       dx: 0, dy: 0, w: null, h: null, removed: false, locked: false, snaps: [], moveAligned: false,
       text: null, baseText: null, origNodes: null,
-      type: {}, baseType: null,
+      type: {}, baseType: null, colour: {}, baseColour: {},
       sent: false, sentBatch: 0, sentSeq: 0,
     };
     el.style.transition = 'none';
@@ -148,6 +152,7 @@
     else { el.style.height = o.height; el.style.maxHeight = o.maxHeight; }
     el.style.display = r.removed ? 'none' : o.display;
     TYPE.forEach((d) => { const t = r.type[d.key]; el.style[d.key] = t ? fmt(t.to) + d.unit : o[d.key]; });
+    COLOUR.forEach((d) => { const c = r.colour[d.key]; el.style[d.key] = c ? c.css : o[d.key]; });
   }
 
   /* ────────────────────────── type ────────────────────────── */
@@ -247,6 +252,90 @@
     return line + (t.match ? ` (now matches ${shortName(t.match)})` : '');
   }
 
+  /* ────────────────────────── colour ────────────────────────── */
+
+  // Text colour applies to an element with its own text. Background colour applies only where a background
+  // already exists: giving a transparent element one is adding, and nudge corrects what is there.
+  const COLOUR = [
+    { key: 'color', label: 'text', name: 'colour', relevant: (el) => ownText(el) },
+    { key: 'backgroundColor', label: 'background', name: 'background colour', relevant: (el) => { const c = toRGBA(cs(el).backgroundColor); return !!c && c[3] > 0; } },
+  ];
+  const NO_TOKEN = 'no token matched this value, check whether one should exist';
+
+  let colourCtx = null;
+  // Any CSS colour, in any colour space, to sRGB bytes, by painting one pixel.
+  function toRGBA(v) {
+    if (!colourCtx) { const c = document.createElement('canvas'); c.width = c.height = 1; colourCtx = c.getContext('2d', { willReadFrequently: true }); }
+    const ctx = colourCtx;
+    ctx.fillStyle = '#010203'; ctx.fillStyle = v;
+    if (ctx.fillStyle === '#010203' && !/^#010203$/i.test(String(v).trim())) return null;
+    ctx.clearRect(0, 0, 1, 1); ctx.fillRect(0, 0, 1, 1);
+    return [...ctx.getImageData(0, 0, 1, 1).data];
+  }
+  const sameRGBA = (a, b) => !!a && !!b && a.every((x, i) => Math.abs(x - b[i]) <= 2);
+  const hexOf = (c) => (c[3] >= 253 ? '#' + c.slice(0, 3).map((x) => x.toString(16).padStart(2, '0')).join('') : `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${fmt(c[3] / 255)})`);
+
+  // Custom properties declared on :root, including inside @media, @supports and @layer, resolved against
+  // the page as it renders now so theme overrides apply. Stylesheets from other origins cannot be read.
+  function readTokens() {
+    const names = new Set();
+    let unreadable = 0;
+    const visit = (rules) => {
+      for (const rule of rules) {
+        if (rule.selectorText != null && rule.selectorText.split(',').some((x) => x.trim() === ':root')) {
+          for (const prop of rule.style) if (prop.startsWith('--')) names.add(prop);
+        }
+        if (rule.cssRules) visit(rule.cssRules);
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      let rules;
+      try { rules = sheet.cssRules; } catch (_) { unreadable++; continue; }
+      if (rules) visit(rules);
+    }
+    for (const prop of document.documentElement.style) if (prop.startsWith('--')) names.add(prop);
+    const root = cs(document.documentElement);
+    const list = [];
+    names.forEach((name) => {
+      const raw = root.getPropertyValue(name).trim();
+      if (!raw || /^(inherit|initial|unset|revert|currentcolor|transparent)$/i.test(raw) || !CSS.supports('color', raw)) return;
+      const rgba = toRGBA(raw);
+      if (rgba) list.push({ name, rgba });
+    });
+    return { list, declared: names.size, unreadable };
+  }
+
+  const tokensNow = () => (state.tokens || (state.tokens = readTokens()));
+  const matchNames = (rgba) => tokensNow().list.filter((t) => sameRGBA(t.rgba, rgba)).map((t) => t.name);
+  const varList = (names) => names.map((n) => `var(${n})`).join(' or ');
+
+  function setColour(d, choice) {
+    const el = state.selected;
+    if (!el) return;
+    state.notice = null;
+    const r = rec(el);
+    if (!r.baseColour[d.key]) { const rgba = toRGBA(cs(el)[d.key]); r.baseColour[d.key] = { rgba, names: matchNames(rgba) }; }
+    const base = r.baseColour[d.key];
+    let next;
+    if (choice.token) {
+      next = { css: `var(${choice.token})`, names: [choice.token], rgba: tokensNow().list.find((t) => t.name === choice.token).rgba };
+    } else {
+      const rgba = toRGBA(choice.hex), names = matchNames(rgba);
+      next = names.length ? { css: `var(${names[0]})`, names, rgba } : { css: choice.hex, names: [], rgba };
+    }
+    const unchanged = sameRGBA(next.rgba, base.rgba) && (base.names.length <= 1 || next.names.length !== 1);
+    if (unchanged) delete r.colour[d.key]; else r.colour[d.key] = next;
+    apply(r); prune(r); render(); updateBoxes(); renderProps();
+    setStatus(withNotice(summary(r) || descriptor(el)));
+  }
+
+  function colourLine(r, d) {
+    const c = r.colour[d.key], b = r.baseColour[d.key];
+    const before = b.names.length ? varList(b.names) : `${hexOf(b.rgba)} (no token)`;
+    const after = c.names.length ? varList(c.names) : `${c.css} (${NO_TOKEN})`;
+    return `${d.name} ${before} → ${after}`;
+  }
+
   // Replaced elements have an intrinsic ratio; changing it stretches the pixels.
   const INTRINSIC = /^(IMG|VIDEO|CANVAS|IFRAME|SVG|PICTURE)$/;
 
@@ -261,7 +350,7 @@
     return null;
   }
 
-  function isNoop(r) { return !r.dx && !r.dy && r.w == null && r.h == null && !r.removed && r.text == null && !Object.keys(r.type).length; }
+  function isNoop(r) { return !r.dx && !r.dy && r.w == null && r.h == null && !r.removed && r.text == null && !Object.keys(r.type).length && !Object.keys(r.colour).length; }
 
   function prune(r) {
     if (!isNoop(r)) return;
@@ -277,6 +366,7 @@
     el.style.maxWidth = o.maxWidth; el.style.maxHeight = o.maxHeight;
     el.style.display = o.display; el.style.transition = o.transition;
     TYPE.forEach((d) => { el.style[d.key] = o[d.key]; });
+    COLOUR.forEach((d) => { el.style[d.key] = o[d.key]; });
     state.changes.delete(el);
   }
 
@@ -528,6 +618,10 @@
         </div>
         <div data-nudge id="nudge-type-match" style="visibility:hidden;min-height:15px;margin-top:5px;color:#e0447a;font-size:11px;line-height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
       </div>
+      <div data-nudge id="nudge-colour" style="display:none;">
+        <div data-nudge id="nudge-chips" style="display:flex;gap:6px;"></div>
+        <div data-nudge id="nudge-palette" style="display:none;margin-top:6px;"></div>
+      </div>
     </div>
     <div data-nudge style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid #2c2a27;align-items:center;">
       <button data-nudge id="nudge-copy" style="flex:1;background:#2f6fed;color:#fff;border:0;border-radius:6px;padding:8px 10px;font:600 12px system-ui;cursor:pointer">Copy for Claude Code</button>
@@ -555,6 +649,7 @@
     if (r.removed) bits.push('remove');
     if (r.text != null) bits.push('text edited');
     TYPE.forEach((d) => { if (r.type[d.key]) bits.push(`${d.label} ${fmt(r.type[d.key].to)}${d.unit}`); });
+    COLOUR.forEach((d) => { const c = r.colour[d.key]; if (c) bits.push(`${d.label} ${c.names.length ? c.names[0] : c.css}`); });
     if (r.w != null) bits.push(`width ${rnd(r.base.w)} → ${rnd(r.w)}px`);
     if (r.h != null) bits.push(`height ${rnd(r.base.h)} → ${rnd(r.h)}px`);
     if (r.locked) bits.push('ratio locked');
@@ -616,6 +711,7 @@
       }
       if (r.h != null) lines.push(`   height ${rnd(r.base.h)}px → ${rnd(r.h)}px`);
       if (!r.removed) TYPE.forEach((d) => { if (r.type[d.key]) lines.push(`   ${typeLine(r, d)}`); });
+      if (!r.removed) COLOUR.forEach((d) => { if (r.colour[d.key]) lines.push(`   ${colourLine(r, d)}`); });
       const note = ratioNote(r);
       if (note) lines.push(`   ${note}`);
       if (r.dx || r.dy) {
@@ -634,6 +730,7 @@
     if (recs.some((r) => moved(r) && !r.moveAligned)) lines.push(FOOTER.spacing);
     if (recs.some((r) => !r.removed && (r.w != null || r.h != null))) lines.push(FOOTER.widths);
     if (recs.some((r) => !r.removed && Object.keys(r.type).length)) lines.push(FOOTER.type);
+    if (recs.some((r) => !r.removed && Object.keys(r.colour).length)) lines.push(FOOTER.colour);
     if (recs.some((r) => !r.removed && r.text != null)) lines.push(FOOTER.text);
     if (recs.some((r) => r.removed)) lines.push(FOOTER.removals);
     return lines.join('\n');
@@ -692,9 +789,14 @@
   // Controls appear only for the selected element and only when they apply to it.
   function renderProps() {
     const el = state.selected;
-    const showType = !!el && document.contains(el) && !INTRINSIC.test(el.tagName.toUpperCase()) && ownText(el);
+    const ok = !!el && document.contains(el) && !INTRINSIC.test(el.tagName.toUpperCase());
+    const showType = ok && ownText(el);
+    const colours = ok ? COLOUR.filter((d) => d.relevant(el) || (state.changes.get(el) && state.changes.get(el).colour[d.key])) : [];
     $('nudge-type').style.display = showType ? '' : 'none';
-    $('nudge-props').style.display = showType ? '' : 'none';
+    $('nudge-colour').style.display = colours.length ? '' : 'none';
+    $('nudge-colour').style.marginTop = showType && colours.length ? '8px' : '0';
+    $('nudge-props').style.display = showType || colours.length ? '' : 'none';
+    renderColour(el, colours);
     if (!showType) return;
     const r = state.changes.get(el);
     const live = readType(cs(el));
@@ -758,6 +860,74 @@
     wrap.appendChild(col);
   }
 
+  // Chips show each relevant colour and its token. The palette opens from a chip, tokens first, the picker last.
+  function renderColour(el, colours) {
+    const chips = $('nudge-chips'), pal = $('nudge-palette');
+    if (!colours.length) { chips.textContent = ''; pal.textContent = ''; pal.style.display = 'none'; pal.dataset.for = ''; return; }
+    if (state.palette && !colours.some((d) => d.key === state.palette)) state.palette = null;
+    const r = state.changes.get(el);
+    const current = (d) => {
+      const c = r && r.colour[d.key];
+      if (c) return { css: c.css, names: c.names, rgba: c.rgba };
+      const rgba = toRGBA(cs(el)[d.key]);
+      return { css: hexOf(rgba), names: matchNames(rgba), rgba };
+    };
+    chips.textContent = '';
+    colours.forEach((d) => {
+      const cur = current(d);
+      const b = node('button', `flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:${state.palette === d.key ? '#34312d' : '#242220'};border:1px solid #3a3733;border-radius:4px;padding:3px 6px;color:#c9c2b7;font:11px ui-monospace,Menlo,monospace;cursor:pointer;text-align:left;`);
+      b.dataset.colour = d.key;
+      b.appendChild(node('span', `flex-shrink:0;width:12px;height:12px;border-radius:2px;border:1px solid rgba(255,255,255,.25);background:${hexOf(cur.rgba)};`));
+      b.appendChild(node('span', 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', `${d.label} ${cur.names.length ? cur.names[0] + (cur.names.length > 1 ? ' +' + (cur.names.length - 1) : '') : cur.css}`));
+      b.addEventListener('click', () => { state.palette = state.palette === d.key ? null : d.key; renderProps(); });
+      chips.appendChild(b);
+    });
+    const d = COLOUR.find((x) => x.key === state.palette);
+    if (!d) { pal.style.display = 'none'; pal.textContent = ''; pal.dataset.for = ''; return; }
+    pal.style.display = '';
+    const cur = current(d);
+    // Rebuild only when a different palette opens, so the native colour picker is never torn down mid-use.
+    const id = `${d.key}`;
+    if (pal.dataset.for !== id || pal._el !== el) {
+      pal.textContent = ''; pal.dataset.for = id; pal._el = el;
+      const { list, declared, unreadable } = tokensNow();
+      if (list.length) {
+        const grid = node('div', 'display:flex;flex-wrap:wrap;gap:4px;max-height:84px;overflow:auto;padding:2px;');
+        grid.id = 'nudge-swatches';
+        list.forEach((t) => {
+          const sw = node('button', `width:18px;height:18px;padding:0;border-radius:3px;border:1px solid rgba(255,255,255,.25);background:${hexOf(t.rgba)};cursor:pointer;`);
+          sw.dataset.token = t.name; sw.title = t.name;
+          sw.addEventListener('click', () => setColour(d, { token: t.name }));
+          sw.addEventListener('mouseenter', () => { $('nudge-token-name').textContent = t.name; });
+          grid.appendChild(sw);
+        });
+        pal.appendChild(grid);
+        pal.appendChild(node('div', 'margin-top:4px;color:#9c958b;font:11px ui-monospace,Menlo,monospace;min-height:14px;')).id = 'nudge-token-name';
+      } else {
+        const why = declared ? 'None of the custom properties on :root are colours.' : 'No custom properties are declared on :root.';
+        pal.appendChild(node('div', 'color:#c9c2b7;font-size:11px;', why + (unreadable ? ` ${unreadable} stylesheet${unreadable > 1 ? 's' : ''} from other sites could not be read.` : ''))).id = 'nudge-no-tokens';
+      }
+      const row = node('label', 'display:flex;align-items:center;gap:6px;margin-top:6px;color:#6f6a62;font-size:11px;');
+      row.appendChild(document.createTextNode(list.length ? 'Other colour' : 'Pick a colour'));
+      const picker = node('input', 'width:28px;height:18px;padding:0;border:0;background:none;cursor:pointer;');
+      picker.type = 'color'; picker.id = 'nudge-picker';
+      picker.addEventListener('input', () => setColour(d, { hex: picker.value }));
+      row.appendChild(picker);
+      pal.appendChild(row);
+      pal.appendChild(node('div', 'color:#e0a44a;font-size:11px;margin-top:2px;', 'A colour that matches no token is reported as such in the batch.')).id = 'nudge-picker-note';
+    }
+    const picker = $('nudge-picker');
+    if (picker && document.activeElement !== picker) picker.value = hexOf([...cur.rgba.slice(0, 3), 255]);
+    pal.querySelectorAll('[data-token]').forEach((sw) => {
+      const on = cur.names.includes(sw.dataset.token);
+      sw.toggleAttribute('data-match', on);
+      sw.style.outline = on ? '2px solid #ece7df' : 'none';
+      sw.style.outlineOffset = '1px';
+    });
+    const nameLine = $('nudge-token-name');
+    if (nameLine) nameLine.textContent = cur.names.length ? `${d.label}: ${varList(cur.names)}` : `${d.label}: ${cur.css}, no token`;
+  }
+
   function onTypeKey(e) {
     const d = TYPE.find((x) => x.key === e.target.dataset.prop);
     if (!d || !state.selected) return;
@@ -787,7 +957,7 @@
   /* ────────────────────────── selection ────────────────────────── */
 
   function select(el) {
-    if (el !== state.selected) { state.typeCands = null; matchBox.style.display = 'none'; }
+    if (el !== state.selected) { state.typeCands = null; state.tokens = null; state.palette = null; matchBox.style.display = 'none'; }
     state.selected = el;
     updateBoxes();
     renderProps();

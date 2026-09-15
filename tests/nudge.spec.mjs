@@ -911,6 +911,99 @@ test('42 clicking the page after using a field sends arrows back to moving eleme
   expect(await computed(page, TYPE_T, 'fontSize')).toBe('18px');
 });
 
+/* ───────────── token-aware colour (checks 43–48) ───────────── */
+
+const CARD = '[data-test=card]';
+const COLOUR_FOOTER = 'A colour change names a design token: use that token. A value with no token is a question for the design system, not an instruction to hard-code it.';
+const NO_TOKEN = 'no token matched this value, check whether one should exist';
+const chip = (page, key) => page.locator(`#nudge-chips button[data-colour="${key}"]`);
+const swatch = (page, name) => page.locator(`#nudge-swatches button[data-token="${name}"]`);
+
+test('43 colour controls appear only where they apply', async ({ page }) => {
+  await inject(page);
+  await select(page, CARD);
+  await expect(page.locator('#nudge-chips button')).toHaveCount(2);
+  await select(page, '[data-test=plain]');
+  await expect(page.locator('#nudge-chips button')).toHaveCount(1);
+  await expect(chip(page, 'color')).toBeVisible();
+  await select(page, '[data-test=wrapper]', [2, 2]);
+  await expect(page.locator('#nudge-props')).toBeHidden();
+  await select(page, '[data-test=logo]');
+  await expect(page.locator('#nudge-props')).toBeHidden();
+});
+
+test('44 the palette is built from colour tokens on :root and marks the current match', async ({ page }) => {
+  await inject(page);
+  await select(page, CARD);
+  await expect(chip(page, 'color')).toContainText('text --ink-muted');
+  await expect(chip(page, 'backgroundColor')).toContainText('background --surface-2');
+  await expect(page.locator('#nudge-palette')).toBeHidden();
+  await chip(page, 'color').click();
+  const names = await page.locator('#nudge-swatches button').evaluateAll((els) => els.map((e) => e.dataset.token));
+  expect(names.sort()).toEqual(['--accent', '--alias-ink', '--ink', '--ink-muted', '--surface', '--surface-2']);
+  await expect(page.locator('#nudge-swatches [data-match]')).toHaveCount(1);
+  await expect(swatch(page, '--ink-muted')).toHaveAttribute('data-match', '');
+  // The palette comes before the picker.
+  const order = await page.evaluate(() => { const s = document.querySelector('#nudge-swatches'), p = document.querySelector('#nudge-picker'); return !!(s.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING); });
+  expect(order).toBe(true);
+});
+
+test('45 choosing a token previews it as var() and the batch reports token names', async ({ page }) => {
+  await inject(page);
+  const before = await cssText(page, CARD);
+  await select(page, CARD);
+  await chip(page, 'color').click();
+  await swatch(page, '--ink').click();
+  expect(await page.evaluate((s) => document.querySelector(s).style.color, CARD)).toBe('var(--ink)');
+  expect(await computed(page, CARD, 'color')).toBe('rgb(31, 33, 36)');
+  await chip(page, 'backgroundColor').click();
+  await swatch(page, '--surface').click();
+  const lines = await reportLines(page);
+  expect(lines).toContain('colour var(--ink-muted) → var(--ink)');
+  expect(lines).toContain('background colour var(--surface-2) → var(--surface)');
+  expect(footerOf(await report(page))).toEqual([FOOTER.apply, COLOUR_FOOTER]);
+  await page.locator('#nudge-list button').first().click();
+  expect(await cssText(page, CARD)).toBe(before);
+});
+
+test('46 tokens sharing a value are all named', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=ink]');
+  await expect(chip(page, 'color')).toContainText('text --ink +1');
+  await chip(page, 'color').click();
+  await expect(page.locator('#nudge-swatches [data-match]')).toHaveCount(2);
+  await swatch(page, '--accent').click();
+  expect(await reportLines(page)).toContain('colour var(--ink) or var(--alias-ink) → var(--accent)');
+});
+
+test('47 the picker is a fallback: a matching value reports its token, anything else says no token matched', async ({ page }) => {
+  await inject(page);
+  await select(page, CARD);
+  await chip(page, 'color').click();
+  await page.locator('#nudge-picker').fill('#3a7bd5');
+  expect(await computed(page, CARD, 'color')).toBe('rgb(58, 123, 213)');
+  expect(await reportLines(page)).toContain(`colour var(--ink-muted) → #3a7bd5 (${NO_TOKEN})`);
+  await page.locator('#nudge-picker').fill('#2f6fed');
+  expect(await reportLines(page)).toContain('colour var(--ink-muted) → var(--accent)');
+  expect(await page.evaluate((s) => document.querySelector(s).style.color, CARD)).toBe('var(--accent)');
+});
+
+test('48 with no custom properties on :root the panel says so and offers the picker with the warning', async ({ page }) => {
+  await page.evaluate(() => {
+    const sheet = document.styleSheets[0];
+    for (let i = sheet.cssRules.length - 1; i >= 0; i--) if (sheet.cssRules[i].selectorText === ':root') sheet.deleteRule(i);
+  });
+  await inject(page);
+  await select(page, '[data-test=plain]');
+  await chip(page, 'color').click();
+  await expect(page.locator('#nudge-no-tokens')).toHaveText('No custom properties are declared on :root.');
+  await expect(page.locator('#nudge-swatches')).toHaveCount(0);
+  await expect(page.locator('#nudge-picker')).toBeVisible();
+  await expect(page.locator('#nudge-picker-note')).toHaveText('A colour that matches no token is reported as such in the batch.');
+  await page.locator('#nudge-picker').fill('#123456');
+  expect(await reportLines(page)).toContain(`colour #222222 (no token) → #123456 (${NO_TOKEN})`);
+});
+
 /* ───────────── type steppers (check 49) ───────────── */
 
 test('49 stepper arrows appear on hover or focus and step like the arrow keys', async ({ page }) => {

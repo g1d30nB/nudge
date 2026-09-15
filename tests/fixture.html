@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>nudge fixture</title>
 <style>
+  :root { --ink: #1f2124; --alias-ink: #1f2124; --ink-muted: #5b6068; --surface: #fbfbfa; --surface-2: #eef0f2; --accent: #2f6fed; --space-4: 16px; }
   body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #222; background: #fafaf7; }
   section { box-sizing: border-box; }
   #hero { display: flex; gap: 40px; padding: 40px; height: 300px; }
@@ -39,6 +40,10 @@
   .type-lede { font-size: 21px; line-height: 30px; }
   .type-title { font-size: 28px; font-weight: 700; letter-spacing: 0.5px; }
   .type-wrapper { padding: 6px; }
+  #palette { padding: 40px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+  .swatch-card { background: var(--surface-2); color: var(--ink-muted); padding: 12px; }
+  .ink-text { color: var(--ink); margin: 0; }
+  .plain-box { padding: 12px; }
   #tail { height: 700px; }
 </style>
 </head>
@@ -112,6 +117,12 @@
   <p class="type-lede" data-test="lede">A lede paragraph set larger</p>
   <p class="type-title" data-test="title">A title set heavier</p>
   <div class="type-wrapper" data-test="wrapper"><p>Text inside a wrapper</p></div>
+</section>
+
+<section id="palette">
+  <div class="swatch-card" data-test="card">A card on a token surface</div>
+  <p class="ink-text" data-test="ink">Text set in the ink token</p>
+  <div class="plain-box" data-test="plain">A box with no background</div>
 </section>
 
 <div id="tail"></div>
