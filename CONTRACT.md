@@ -71,6 +71,7 @@ All pass/fail. No subjective checks.
 | 46 | Shared values | Text in `var(--ink)`, where `--alias-ink` has the same value, shows `text --ink +1`, marks both swatches, and reports `colour var(--ink) or var(--alias-ink) → var(--accent)` |
 | 47 | Picker fallback | Picker `#3a7bd5` → `colour var(--ink-muted) → #3a7bd5 (no token matched this value, check whether one should exist)`. Picker `#2f6fed` equals `--accent` → reported and previewed as `var(--accent)` |
 | 48 | No tokens | With the :root rule removed: `No custom properties are declared on :root.`, no swatches, picker and warning visible; picking `#123456` → `colour #222222 (no token) → #123456 (no token matched this value, check whether one should exist)` |
+| 49 | Type steppers | Stepper arrows are hidden at rest and appear on hover or focus. Clicking up four times from 17px snaps through 20px to 21px with the match line; Shift-click +10; Alt-click −0.1. Clicking a stepper keeps focus in a focused field and ArrowUp still steps. Holding a stepper repeats. The element never moves |
 
 ## Test Plan
 
@@ -143,6 +144,12 @@ Both branches were committed and merged before their contract and CLAUDE.md entr
 Text colour for elements with their own text; background colour only where a background already exists. Tokens are the custom properties declared on `:root` (including inside @media, @supports and @layer), resolved against the rendered page and converted to sRGB bytes by painting a pixel, so any colour space compares. Choosing a token previews `var(--token)`; the picker is a fallback that reports a token when its value matches one and says no token matched otherwise.
 
 48/48 on the first run, stable over `--repeat-each 3`, no existing test changed. Held back from main on the restraint rule: with a palette open the panel stacks four labelled type fields, colour chips, a swatch grid, a picker and a warning, about 400px tall on a real token set, which reads as an inspector.
+
+## Type steppers (added 15 Sep 2026, branch feat/type-steppers, check 49)
+
+Small up and down arrows inside each type field, shown on hover or focus like a browser's own number field, so the panel at rest is unchanged. They share the arrow keys' step and snapping rules, repeat when held and keep focus in the field. Numbered 49 because the unmerged `feat/colour` branch uses 43–48.
+
+First run failed on a real bug: when a step landed on a match, the match line appeared under the fields, and because the panel is anchored to the bottom the fields jumped up from under the pointer, so the next click missed and held repeats stopped. The match line now keeps its space and toggles visibility. No existing test changed. 43/43, stable over `--repeat-each 3`.
 
 ## Expected first failures
 

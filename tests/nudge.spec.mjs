@@ -1003,3 +1003,46 @@ test('48 with no custom properties on :root the panel says so and offers the pic
   await page.locator('#nudge-picker').fill('#123456');
   expect(await reportLines(page)).toContain(`colour #222222 (no token) → #123456 (${NO_TOKEN})`);
 });
+
+/* ───────────── type steppers (check 49) ───────────── */
+
+test('49 stepper arrows appear on hover or focus and step like the arrow keys', async ({ page }) => {
+  await inject(page);
+  await select(page, TYPE_T);
+  const col = page.locator('#nudge-props [data-steppers="fontSize"]');
+  const up = col.locator('[data-step="up"]'), down = col.locator('[data-step="down"]');
+  await expect(col).toBeHidden();                                  // panel at rest is unchanged
+  await typeField(page, 'fontSize').hover();
+  await expect(col).toBeVisible();
+
+  // Click steps 1 and snaps like ArrowUp: 17 → 18 → 19 → 20 (heading) → 21 (lede).
+  for (let i = 0; i < 4; i++) await up.click();
+  await expect(typeField(page, 'fontSize')).toHaveValue('21');
+  await expect(page.locator('#nudge-type-match')).toHaveText('size matches .type-lede');
+  await up.click({ modifiers: ['Shift'] });
+  await expect(typeField(page, 'fontSize')).toHaveValue('31');
+  await down.click({ modifiers: ['Alt'] });
+  await expect(typeField(page, 'fontSize')).toHaveValue('30.9');
+
+  // Focus stays in a focused field, so the keyboard carries on working.
+  await typeField(page, 'fontWeight').focus();
+  const wcol = page.locator('#nudge-props [data-steppers="fontWeight"]');
+  await expect(wcol).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(wcol).toBeVisible();                                // still shown while focused
+  await wcol.locator('[data-step="up"]').click();
+  expect(await page.evaluate(() => document.activeElement.dataset.prop)).toBe('fontWeight');
+  await page.keyboard.press('ArrowUp');
+  await expect(typeField(page, 'fontWeight')).toHaveValue('600');
+
+  // Holding repeats.
+  const box = await wcol.locator('[data-step="down"]').boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(700);
+  await page.mouse.up();
+  const w = Number(await typeField(page, 'fontWeight').inputValue());
+  expect(w).toBeLessThanOrEqual(300);
+
+  expect((await changes(page))[0]).toMatchObject({ dx: 0, dy: 0 });
+});
