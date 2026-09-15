@@ -31,7 +31,7 @@ Go to the [install page](https://g1d30nb.github.io/nudge/) and drag the link to 
 There is no clone, no server, no npm, and nothing is added to your project. The bookmark loads `nudge.js` from jsDelivr when you click it. If you would rather make the bookmark by hand, paste this line as its URL:
 
 ```
-javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.1.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
+javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.1.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
 ```
 
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.

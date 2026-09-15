@@ -2,7 +2,7 @@
 
 Installed bookmarks are pinned to a release. To get a new release, reinstall the bookmark from the [install page](https://g1d30nb.github.io/nudge/).
 
-## Unreleased
+## v1.1.1, 15 September 2026
 
 ### Fixed
 
