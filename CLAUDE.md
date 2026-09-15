@@ -58,6 +58,8 @@ Runs `node --check nudge.js` then the Playwright suite. 30/30 as of 15 Sep 2026,
 - Type candidates are collected once per selection. Base values are read on the first type change for the record, all four at once, because a unitless line height changes in px when font size changes.
 - Page mousedowns blur any focused panel field before selecting, otherwise arrows keep stepping type after the user has clicked a different element.
 - A field's change event that does not change the value must not re-render: rebuilding rows under the pointer swallows the click that caused the blur.
+- Type fields have stepper arrows, shown only on hover or focus. Arrows keys and steppers share `stepType`, so step sizes and snapping cannot drift apart. Steppers call `preventDefault` on mousedown to keep focus in the field, and repeat after 400ms at 70ms intervals while held.
+- The panel is anchored to the bottom, so any element appearing inside it moves everything above it upward. Anything that toggles near a control the pointer may be on (the type match line) must reserve its space and toggle `visibility`, not `display`.
 - Copy serialises final state only, not history. One line per touched element.
 - Snap detection runs during drag (guides) and again on release with 1px tolerance to record relationships. Relationships are the point: "bottom aligned with X" beats "moved 412px".
 - The batch text instructs the agent: aligned moves become layout rules (align-self, margin auto, grid), unaligned moves become margin/gap, no transforms, no inline styles, keep widths responsive.
