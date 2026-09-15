@@ -65,6 +65,7 @@ All pass/fail. No subjective checks.
 | 40 | Modifiers and lines | Shift+ArrowUp +10; Alt+ArrowDown −0.1 without snapping; letter spacing Alt+ArrowUp from normal to 0.1; weight ArrowUp 400 → 500. Each changed property is its own batch line with before and after |
 | 41 | Typed value and undo | Typing 30 in line height + Enter → computed 30px, batch `line height 25.5px → 30px, 1.5 → 1.76 × font size (now matches .type-lede)` (same-tag preference on ties). Typing weight 700 matches `.type-title`. Clicking the row's undo straight after restores `style.cssText` exactly |
 | 42 | Focus returns to the page | After stepping a field, clicking another element and pressing ArrowDown moves that element and does not change type |
+| 49 | Type steppers | Stepper arrows are hidden at rest and appear on hover or focus. Clicking up four times from 17px snaps through 20px to 21px with the match line; Shift-click +10; Alt-click −0.1. Clicking a stepper keeps focus in a focused field and ArrowUp still steps. Holding a stepper repeats. The element never moves |
 
 ## Test Plan
 
@@ -131,6 +132,12 @@ Four fields (size, line height, letter spacing, weight) for a selected element w
 First run: three failures. Two were test assumptions (the fixture body sets line-height 1.5, so 17px text computes to 25.5px rather than `normal`; a click at the wrapper's corner hit its child). One was real: a typed value matched the first element in document order instead of preferring the same tag. A second real bug followed: the change event fired on blur re-rendered the rows under the pointer and swallowed the click on a row's undo; no-op changes no longer re-render. Line height lines also gained the ratio to font size, because computed line height is always in pixels even when the source is unitless. No existing test changed. 42/42, stable over `--repeat-each 3`.
 
 Both branches were committed and merged before their contract and CLAUDE.md entries were written, because a shell chain stopped early; these entries were added afterwards on `docs/text-and-type`.
+
+## Type steppers (added 15 Sep 2026, branch feat/type-steppers, check 49)
+
+Small up and down arrows inside each type field, shown on hover or focus like a browser's own number field, so the panel at rest is unchanged. They share the arrow keys' step and snapping rules, repeat when held and keep focus in the field. Numbered 49 because the unmerged `feat/colour` branch uses 43–48.
+
+First run failed on a real bug: when a step landed on a match, the match line appeared under the fields, and because the panel is anchored to the bottom the fields jumped up from under the pointer, so the next click missed and held repeats stopped. The match line now keeps its space and toggles visibility. No existing test changed. 43/43, stable over `--repeat-each 3`.
 
 ## Expected first failures
 

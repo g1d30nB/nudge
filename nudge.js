@@ -526,7 +526,7 @@
         <div data-nudge style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
           ${['fontSize:size', 'lineHeight:line', 'letterSpacing:spacing', 'fontWeight:weight'].map((x) => { const [k, l] = x.split(':'); return `<label data-nudge style="display:flex;flex-direction:column;gap:2px;color:#6f6a62;font-size:10px;">${l}<input data-nudge data-prop="${k}" inputmode="decimal" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;margin:0;background:#242220;border:1px solid #3a3733;border-radius:4px;color:#ece7df;padding:3px 5px;font:12px ui-monospace,Menlo,monospace;"></label>`; }).join('')}
         </div>
-        <div data-nudge id="nudge-type-match" style="display:none;margin-top:5px;color:#e0447a;font-size:11px;"></div>
+        <div data-nudge id="nudge-type-match" style="visibility:hidden;min-height:15px;margin-top:5px;color:#e0447a;font-size:11px;line-height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
       </div>
     </div>
     <div data-nudge style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid #2c2a27;align-items:center;">
@@ -707,7 +707,55 @@
     const line = $('nudge-type-match');
     const matched = r ? TYPE.filter((d) => r.type[d.key] && r.type[d.key].match) : [];
     line.textContent = matched.map((d) => `${d.label} matches ${shortName(r.type[d.key].match)}`).join(' · ');
-    line.style.display = matched.length ? '' : 'none';
+    // Reserve the line's space even when empty: the panel is anchored to the bottom, so a line appearing
+    // would push the fields up from under the pointer mid-click.
+    line.style.visibility = matched.length ? 'visible' : 'hidden';
+  }
+
+  // One step up or down, shared by the arrow keys and the stepper buttons so both follow the same rules.
+  function stepType(d, dir, mods) {
+    if (!state.selected) return;
+    const r = state.changes.get(state.selected);
+    const from = r && r.baseType ? typeFrom(r, d) : (() => { const t = readType(cs(state.selected)); return t[d.key] ?? (d.key === 'lineHeight' ? Math.round(t.fontSize * 1.2) : 0); })();
+    const size = mods.altKey ? d.fine : mods.shiftKey ? d.big : d.step;
+    setType(d, from + dir * size, mods.altKey ? 'fine' : 'step');
+  }
+
+  // Steppers sit inside each field and appear only on hover or focus, like a browser's own number field,
+  // so the panel at rest looks the same. Holding one repeats. Clicking keeps focus where it was.
+  function addSteppers(d) {
+    const input = typeInput(d.key);
+    const wrap = node('div', 'position:relative;');
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    input.style.paddingRight = '16px';
+    const col = node('div', 'position:absolute;top:1px;right:1px;bottom:1px;width:14px;display:none;flex-direction:column;border-left:1px solid #3a3733;');
+    col.dataset.steppers = d.key;
+    let hovered = false;
+    const sync = () => { col.style.display = hovered || document.activeElement === input ? 'flex' : 'none'; };
+    wrap.addEventListener('mouseenter', () => { hovered = true; sync(); });
+    wrap.addEventListener('mouseleave', () => { hovered = false; sync(); });
+    input.addEventListener('focus', sync);
+    input.addEventListener('blur', sync);
+    [['up', 1], ['down', -1]].forEach(([name, dir]) => {
+      const b = node('button', `flex:1;display:flex;align-items:center;justify-content:center;padding:0;margin:0;border:0;${dir < 0 ? 'border-top:1px solid #3a3733;' : ''}background:transparent;color:#9c958b;cursor:pointer;`);
+      b.dataset.step = name; b.tabIndex = -1; b.setAttribute('aria-label', `${d.name} ${name}`);
+      b.appendChild(node('span', `width:0;height:0;border-left:3px solid transparent;border-right:3px solid transparent;${dir > 0 ? 'border-bottom' : 'border-top'}:4px solid currentColor;`));
+      b.addEventListener('mouseenter', () => { b.style.color = '#ece7df'; });
+      b.addEventListener('mouseleave', () => { b.style.color = '#9c958b'; });
+      b.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const mods = { shiftKey: e.shiftKey, altKey: e.altKey };
+        stepType(d, dir, mods);
+        let timer = setTimeout(function repeat() { stepType(d, dir, mods); timer = setTimeout(repeat, 70); }, 400);
+        const stop = () => { clearTimeout(timer); document.removeEventListener('mouseup', stop, true); b.removeEventListener('mouseleave', stop); };
+        document.addEventListener('mouseup', stop, true);
+        b.addEventListener('mouseleave', stop);
+      });
+      col.appendChild(b);
+    });
+    wrap.appendChild(col);
   }
 
   function onTypeKey(e) {
@@ -715,10 +763,7 @@
     if (!d || !state.selected) return;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
-      const r = state.changes.get(state.selected);
-      const from = r && r.baseType ? typeFrom(r, d) : (() => { const t = readType(cs(state.selected)); return t[d.key] ?? (d.key === 'lineHeight' ? Math.round(t.fontSize * 1.2) : 0); })();
-      const size = e.altKey ? d.fine : e.shiftKey ? d.big : d.step;
-      setType(d, from + (e.key === 'ArrowUp' ? size : -size), e.altKey ? 'fine' : 'step');
+      stepType(d, e.key === 'ArrowUp' ? 1 : -1, e);
     } else if (e.key === 'Enter') {
       e.preventDefault(); onTypeChange(e);
     } else if (e.key === 'Escape') {
@@ -963,7 +1008,7 @@
   $('nudge-recopy').addEventListener('click', recopy);
   $('nudge-reset').addEventListener('click', resetAll);
   $('nudge-close').addEventListener('click', () => window.__nudge.destroy());
-  TYPE.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); });
+  TYPE.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });
   render();
 
   window.__nudge = {
