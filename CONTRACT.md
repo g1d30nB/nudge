@@ -53,6 +53,18 @@ All pass/fail. No subjective checks.
 | 28 | Reload warning | Replacing head `<style>` text before Copy shows no warning, before or after copying. Appending a new `<style>` and a text node to it (CSS-in-JS) shows no warning. Replacing style text after Copy → `#nudge-reload` visible with text "The page reloaded. Clear the preview to see the real result." and inline styles unchanged. Clear preview hides it. Adding a `<link rel=stylesheet>` after a later Copy shows it |
 | 29 | Computed max-width | Element with `max-width: clamp(200px, 33.37vw, 900px)` (computed as a fractional px) resized +100 → report contains `width Npx → N+100px (the element was capped at Npx by a computed max-width, check the source for the rule)` and no `was capped by max-width:` |
 | 30 | Keys after panel clicks | Click a row's undo, select an element, ArrowRight → dx 1. Click Reset, select, Escape → nothing selected |
+| 31 | Edit text | Double-click a plain-text element → contentEditable, status "Editing text. Escape or click elsewhere to finish."; select all, type, Escape → attribute removed, text replaced, report contains `text "old" → "new"`, footer is apply + text line, row reads "text edited" |
+| 32 | Refuse mixed content | Double-click text inside an element with a child element → not editable, no record, status "Cannot edit text: this element contains other elements (strong); double-click the innermost text instead." |
+| 33 | Plain text only | While editing, Enter, Cmd/Ctrl+B and a paste carrying HTML leave zero child elements and no newline; pasted text arrives as plain text with whitespace collapsed |
+| 34 | Commit and undo | Edit an element containing a React-style comment node, click another element → committed and reported; row undo → `innerHTML` identical to the original, including the comment |
+| 35 | Keys while editing | Backspace deletes a character, arrows move the caret; no move or removal is recorded. After Escape, ArrowDown nudges again |
+| 36 | Middle change | A one-word change in the middle of a long string, where head-and-tail truncation would print identical strings, is reported as two different windows around the change, each within the truncation budget |
+| 37 | Type controls relevance | The type row is hidden with nothing selected, visible for an element with its own text, hidden for an image and for a wrapper whose text is all in child elements |
+| 38 | Populated from computed style | Fields show computed size, line height (px, or `normal`), letter spacing (px, or `normal`) and weight |
+| 39 | Step and snap | ArrowUp from 17px passes a 20px heading without sticking and lands on 21px matching `.type-lede`: computed 21px, match line "size matches .type-lede", match box over the lede, batch line `font size 17px → 21px (now matches .type-lede)`, footer apply + type. One more step clears the match. The element never moves |
+| 40 | Modifiers and lines | Shift+ArrowUp +10; Alt+ArrowDown −0.1 without snapping; letter spacing Alt+ArrowUp from normal to 0.1; weight ArrowUp 400 → 500. Each changed property is its own batch line with before and after |
+| 41 | Typed value and undo | Typing 30 in line height + Enter → computed 30px, batch `line height 25.5px → 30px, 1.5 → 1.76 × font size (now matches .type-lede)` (same-tag preference on ties). Typing weight 700 matches `.type-title`. Clicking the row's undo straight after restores `style.cssText` exactly |
+| 42 | Focus returns to the page | After stepping a field, clicking another element and pressing ArrowDown moves that element and does not change type |
 
 ## Test Plan
 
@@ -105,6 +117,20 @@ Four changes from using the published bookmarklet on a real Next.js and Tailwind
 First run: check 18 failed as expected (it asserted five lines). Then 18, 26 and 27 failed together on a pre-existing bug: panel buttons keep focus after a click because page mousedowns are cancelled, and the key handler ignored keys while a button had focus, so arrows, Backspace and Escape went dead after any Copy, Reset or undo. Check 30 covers it. Panel rows also switched from `innerHTML` to `textContent`, so page text containing markup renders as text.
 
 30/30, stable over `--repeat-each 3`.
+
+## Text editing (added 15 Sep 2026, branch feat/edit-text, checks 31–36)
+
+Double-click a selected element to edit its text in place. Only elements without child elements are editable; comment nodes are allowed because React server rendering inserts `<!-- -->` between text segments, and a strict text-nodes-only rule would refuse most text on Next.js pages. Editing uses `contentEditable="plaintext-only"` with guards for Enter, formatting input types, paste and drop. Undo restores cloned original nodes.
+
+First run: two failures, both test mistakes. Chrome serialises an empty comment as `<!-- -->`, and the End key does not move the caret to the end on macOS. No existing test changed. 36/36, stable over `--repeat-each 3`.
+
+## Type controls (added 15 Sep 2026, branch feat/type, checks 37–42)
+
+Four fields (size, line height, letter spacing, weight) for a selected element with its own text. Font family is out of scope. Plain arrows step 1 (weight 100), Shift 10 (weight 100), Alt 0.1 (weight 10). Plain and Shift steps snap to another visible text element's value within tolerance (0.5px size and line height, 0.05px letter spacing, exact weight), never to the value being stepped away from; Alt steps land exactly. Ties go to an element with the same tag. Matches are named by the recognisable part of the selector (`.lede`) and outlined with the match box.
+
+First run: three failures. Two were test assumptions (the fixture body sets line-height 1.5, so 17px text computes to 25.5px rather than `normal`; a click at the wrapper's corner hit its child). One was real: a typed value matched the first element in document order instead of preferring the same tag. A second real bug followed: the change event fired on blur re-rendered the rows under the pointer and swallowed the click on a row's undo; no-op changes no longer re-render. Line height lines also gained the ratio to font size, because computed line height is always in pixels even when the source is unitless. No existing test changed. 42/42, stable over `--repeat-each 3`.
+
+Both branches were committed and merged before their contract and CLAUDE.md entries were written, because a shell chain stopped early; these entries were added afterwards on `docs/text-and-type`.
 
 ## Expected first failures
 
