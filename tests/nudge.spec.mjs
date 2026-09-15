@@ -805,3 +805,108 @@ test('36 a change hidden by head-and-tail truncation is shown around the differe
   expect(m[2]).toContain('centre');
   expect(m[1].length).toBeLessThanOrEqual(53);
 });
+
+/* ───────────── type controls (checks 37–42) ───────────── */
+
+const TYPE_T = '[data-test=type]';
+const TYPE_FOOTER = "A type change that matches another element should share that element's type style or token rather than repeat the value; an unmatched value may need a new step in the type scale.";
+const typeField = (page, key) => page.locator(`#nudge-props input[data-prop="${key}"]`);
+const reportLines = async (page) => (await report(page)).split('\n').map((l) => l.trim());
+
+test('37 type controls appear only for a selected element with its own text', async ({ page }) => {
+  await inject(page);
+  await expect(page.locator('#nudge-type')).toBeHidden();
+  await select(page, TYPE_T);
+  await expect(page.locator('#nudge-type')).toBeVisible();
+  await select(page, '[data-test=logo]');
+  await expect(page.locator('#nudge-props')).toBeHidden();
+  await select(page, '[data-test=wrapper]', [2, 2]);
+  expect(await selectedIs(page, '[data-test=wrapper]')).toBe(true);
+  await expect(page.locator('#nudge-props')).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#nudge-props')).toBeHidden();
+});
+
+test('38 controls are populated from computed style', async ({ page }) => {
+  await inject(page);
+  await select(page, TYPE_T);
+  await expect(typeField(page, 'fontSize')).toHaveValue('17');
+  await expect(typeField(page, 'lineHeight')).toHaveValue('25.5');   // the fixture body sets line-height 1.5
+  await expect(typeField(page, 'letterSpacing')).toHaveValue('normal');
+  await expect(typeField(page, 'fontWeight')).toHaveValue('400');
+  await select(page, '[data-test=lede]');
+  await expect(typeField(page, 'fontSize')).toHaveValue('21');
+  await expect(typeField(page, 'lineHeight')).toHaveValue('30');
+});
+
+test('39 arrows step font size and snap to another element, which the batch names', async ({ page }) => {
+  await inject(page);
+  await select(page, TYPE_T);
+  await typeField(page, 'fontSize').focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowUp');
+  // 20px is the case-study heading; the next step must leave it rather than stick.
+  await expect(typeField(page, 'fontSize')).toHaveValue('20');
+  await page.keyboard.press('ArrowUp');
+  await expect(typeField(page, 'fontSize')).toHaveValue('21');
+  expect(await computed(page, TYPE_T, 'fontSize')).toBe('21px');
+  await expect(page.locator('#nudge-type-match')).toHaveText('size matches .type-lede');
+  const box = await page.evaluate(() => { const m = window.__nudge._state.els.matchBox; const a = m.getBoundingClientRect(), b = document.querySelector('[data-test=lede]').getBoundingClientRect(); return m.style.display !== 'none' && Math.abs(a.top - b.top) <= 1 && Math.abs(a.width - b.width) <= 1; });
+  expect(box).toBe(true);
+  expect(await reportLines(page)).toContain('font size 17px → 21px (now matches .type-lede)');
+  expect(footerOf(await report(page))).toEqual([FOOTER.apply, TYPE_FOOTER]);
+  // Stepping on to a value nobody uses clears the match.
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('#nudge-type-match')).toBeHidden();
+  expect(await reportLines(page)).toContain('font size 17px → 22px');
+  // Arrow keys in the field never moved the element.
+  expect((await changes(page))[0]).toMatchObject({ dx: 0, dy: 0 });
+});
+
+test('40 modifiers: Shift steps 10, Alt steps finely without snapping; each property reports its own line', async ({ page }) => {
+  await inject(page);
+  await select(page, TYPE_T);
+  await typeField(page, 'fontSize').focus();
+  await page.keyboard.press('Shift+ArrowUp');
+  await expect(typeField(page, 'fontSize')).toHaveValue('27');
+  await typeField(page, 'fontSize').press('ArrowUp');
+  await expect(typeField(page, 'fontSize')).toHaveValue('28');
+  await typeField(page, 'fontSize').press('Alt+ArrowDown');
+  await expect(typeField(page, 'fontSize')).toHaveValue('27.9');
+  await typeField(page, 'letterSpacing').press('Alt+ArrowUp');
+  await expect(typeField(page, 'letterSpacing')).toHaveValue('0.1');
+  await typeField(page, 'fontWeight').press('ArrowUp');
+  await expect(typeField(page, 'fontWeight')).toHaveValue('500');
+  const lines = await reportLines(page);
+  expect(lines).toContain('font size 17px → 27.9px');
+  expect(lines).toContain('letter spacing normal → 0.1px');
+  expect(lines).toContain('weight 400 → 500');
+  expect(lines.filter((l) => /^(font size|line height|letter spacing|weight) /.test(l))).toHaveLength(3);
+});
+
+test('41 a typed value applies on Enter; undo restores the original inline type', async ({ page }) => {
+  await inject(page);
+  const before = await cssText(page, TYPE_T);
+  await select(page, TYPE_T);
+  await typeField(page, 'lineHeight').fill('30');
+  await typeField(page, 'lineHeight').press('Enter');
+  expect(await computed(page, TYPE_T, 'lineHeight')).toBe('30px');
+  expect(await reportLines(page)).toContain('line height 25.5px → 30px, 1.5 → 1.76 × font size (now matches .type-lede)');
+  await typeField(page, 'fontWeight').fill('700');
+  await typeField(page, 'fontWeight').press('Enter');
+  expect(await reportLines(page)).toContain('weight 400 → 700 (now matches .type-title)');
+  await page.locator('#nudge-list button').first().click();
+  expect(await cssText(page, TYPE_T)).toBe(before);
+  expect(await changes(page)).toHaveLength(0);
+});
+
+test('42 clicking the page after using a field sends arrows back to moving elements', async ({ page }) => {
+  await inject(page);
+  await select(page, TYPE_T);
+  await typeField(page, 'fontSize').focus();
+  await page.keyboard.press('ArrowUp');
+  await select(page, '#rotated');
+  await page.keyboard.press('ArrowDown');
+  const recs = await page.evaluate(() => window.__nudge._state.changes.map((r) => ({ id: r.el.id || r.el.dataset.test, dy: r.dy, type: Object.keys(r.type) })));
+  expect(recs).toEqual([{ id: 'type', dy: 0, type: ['fontSize'] }, { id: 'rotated', dy: 1, type: [] }]);
+  expect(await computed(page, TYPE_T, 'fontSize')).toBe('18px');
+});

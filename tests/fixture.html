@@ -33,6 +33,12 @@
   #copy { padding: 40px; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
   #copy p, #copy span { margin: 0; }
   .copy-long { max-width: 900px; }
+  #typeset { padding: 40px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+  #typeset p { margin: 0; }
+  .type-target { font-size: 17px; font-weight: 400; }
+  .type-lede { font-size: 21px; line-height: 30px; }
+  .type-title { font-size: 28px; font-weight: 700; letter-spacing: 0.5px; }
+  .type-wrapper { padding: 6px; }
   #tail { height: 700px; }
 </style>
 </head>
@@ -99,6 +105,13 @@
   <p class="copy-mixed" data-test="mixed">Some <strong>bold</strong> words here</p>
   <span class="copy-comment" data-test="commented">Hello <!-- -->world</span>
   <p class="copy-long" data-test="long">A long sentence that runs on for a while, so that head and tail truncation would hide a change made in the middle of it entirely.</p>
+</section>
+
+<section id="typeset">
+  <p class="type-target" data-test="type">A paragraph whose type we adjust</p>
+  <p class="type-lede" data-test="lede">A lede paragraph set larger</p>
+  <p class="type-title" data-test="title">A title set heavier</p>
+  <div class="type-wrapper" data-test="wrapper"><p>Text inside a wrapper</p></div>
 </section>
 
 <div id="tail"></div>
