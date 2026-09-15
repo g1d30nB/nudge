@@ -28,6 +28,7 @@
     notice: null,           // status prefix while re-recording a sent element
     copyLock: false,        // brief lock after Copy so a double-click cannot clear the preview
     editing: null,          // { el, r, attr, userSelect } while an element's text is being edited
+    typeCands: null,        // other text elements' type values, collected once per selection
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -37,6 +38,7 @@
     aligned: 'A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.',
     spacing: 'A move with no alignment is a spacing intent: adjust margin or gap.',
     widths: 'Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.',
+    type: 'A type change that matches another element should share that element\'s type style or token rather than repeat the value; an unmatched value may need a new step in the type scale.',
     text: 'A text change replaces the old string with the new one wherever that copy lives: markup, a component, a content file or a translation.',
     removals: 'Removals delete the element from the markup.',
   };
@@ -122,10 +124,13 @@
         transform: el.style.transform, width: el.style.width, height: el.style.height,
         maxWidth: el.style.maxWidth, maxHeight: el.style.maxHeight,
         display: el.style.display, transition: el.style.transition,
+        fontSize: el.style.fontSize, lineHeight: el.style.lineHeight,
+        letterSpacing: el.style.letterSpacing, fontWeight: el.style.fontWeight,
       },
       base: { w: rect.width, h: rect.height, maxW: c.maxWidth, maxH: c.maxHeight, cTransform: c.transform },
       dx: 0, dy: 0, w: null, h: null, removed: false, locked: false, snaps: [], moveAligned: false,
       text: null, baseText: null, origNodes: null,
+      type: {}, baseType: null,
       sent: false, sentBatch: 0, sentSeq: 0,
     };
     el.style.transition = 'none';
@@ -142,6 +147,104 @@
     if (r.h != null) { el.style.height = px(r.h); el.style.maxHeight = 'none'; }
     else { el.style.height = o.height; el.style.maxHeight = o.maxHeight; }
     el.style.display = r.removed ? 'none' : o.display;
+    TYPE.forEach((d) => { const t = r.type[d.key]; el.style[d.key] = t ? fmt(t.to) + d.unit : o[d.key]; });
+  }
+
+  /* ────────────────────────── type ────────────────────────── */
+
+  // Font family is deliberately absent: nudge cannot see which fonts are installed or loaded.
+  // Plain arrows step by 1 (weight by 100), Shift by 10, Alt by a fine step that never snaps.
+  const TYPE = [
+    { key: 'fontSize', label: 'size', name: 'font size', unit: 'px', step: 1, big: 10, fine: 0.1, min: 1, tol: 0.5 },
+    { key: 'lineHeight', label: 'line', name: 'line height', unit: 'px', step: 1, big: 10, fine: 0.1, min: 1, tol: 0.5 },
+    { key: 'letterSpacing', label: 'spacing', name: 'letter spacing', unit: 'px', step: 1, big: 10, fine: 0.1, min: -100, tol: 0.05 },
+    { key: 'fontWeight', label: 'weight', name: 'weight', unit: '', step: 100, big: 100, fine: 10, min: 1, max: 1000, tol: 0 },
+  ];
+  const fmt = (n) => String(Math.round(n * 100) / 100);
+  const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+
+  // "normal" line height and letter spacing are kept as null so the batch can say "normal".
+  function readType(st) {
+    const num = (v) => (v === 'normal' ? null : parseFloat(v));
+    return { fontSize: parseFloat(st.fontSize), lineHeight: num(st.lineHeight), letterSpacing: num(st.letterSpacing), fontWeight: parseFloat(st.fontWeight) };
+  }
+
+  function typeFrom(r, d) {
+    if (r.type[d.key]) return r.type[d.key].to;
+    const b = r.baseType[d.key];
+    if (b != null) return b;
+    return d.key === 'lineHeight' ? Math.round(r.baseType.fontSize * 1.2) : 0;
+  }
+
+  // The batch names a match by the part of the selector a person would recognise: ".lede" rather than a path.
+  function shortName(el) {
+    const seg = descriptor(el).split(' > ').pop();
+    const m = /^[a-z0-9-]+([.#].+)$/i.exec(seg);
+    return m ? m[1] : descriptor(el);
+  }
+
+  function typeCandidates(sel) {
+    const out = [];
+    document.body.querySelectorAll('*').forEach((el) => {
+      if (isTool(el) || el === sel || el.contains(sel) || sel.contains(el) || !ownText(el)) return;
+      const st = cs(el);
+      if (st.display === 'none' || st.visibility === 'hidden') return;
+      const b = el.getBoundingClientRect();
+      if (b.width < 1 || b.height < 1) return;
+      out.push({ el, v: readType(st) });
+    });
+    return out;
+  }
+
+  // Nearest other element's value within tolerance, never the value being stepped away from.
+  function typeSnap(d, v, from, sel) {
+    let best = null;
+    for (const c of state.typeCands) {
+      const cv = c.v[d.key];
+      if (cv == null || Math.abs(cv - v) > d.tol || Math.abs(cv - from) < 0.005) continue;
+      const score = Math.abs(cv - v) - (c.el.tagName === sel.tagName ? 0.001 : 0);
+      if (!best || score < best.score) best = { v: cv, el: c.el, score };
+    }
+    return best;
+  }
+
+  // Same preference as snapping: an element of the same kind wins a tie.
+  function typeExact(d, v, sel) {
+    const hits = state.typeCands.filter((x) => x.v[d.key] != null && Math.abs(x.v[d.key] - v) < 0.005);
+    const c = hits.find((x) => x.el.tagName === sel.tagName) || hits[0];
+    return c ? c.el : null;
+  }
+
+  function setType(d, value, how) {
+    const el = state.selected;
+    if (!el || !ownText(el) || !isFinite(value)) return;
+    state.notice = null;
+    const r = rec(el);
+    if (!r.baseType) r.baseType = readType(cs(el));
+    if (!state.typeCands) state.typeCands = typeCandidates(el);
+    const from = typeFrom(r, d);
+    let v = Math.min(d.max ?? Infinity, Math.max(d.min, value));
+    let match = null;
+    if (how === 'step') { const c = typeSnap(d, v, from, el); if (c) { v = c.v; match = c.el; } }
+    if (!match) match = typeExact(d, v, el);
+    const base = r.baseType[d.key];
+    if (base != null && Math.abs(v - base) < 0.005) delete r.type[d.key];
+    else r.type[d.key] = { to: v, match };
+    apply(r); prune(r); render(); updateBoxes();
+    if (match) place(matchBox, match.getBoundingClientRect()); else matchBox.style.display = 'none';
+    renderProps();
+    setStatus(withNotice(summary(r) || descriptor(el)));
+  }
+
+  // Computed line height is always in pixels even when the source is unitless, so give the ratio too.
+  function typeLine(r, d) {
+    const t = r.type[d.key], b = r.baseType[d.key];
+    let line = `${d.name} ${b == null ? 'normal' : fmt(b) + d.unit} → ${fmt(t.to)}${d.unit}`;
+    if (d.key === 'lineHeight' && b != null) {
+      const fsNow = r.type.fontSize ? r.type.fontSize.to : r.baseType.fontSize;
+      line += `, ${fmt(b / r.baseType.fontSize)} → ${fmt(t.to / fsNow)} × font size`;
+    }
+    return line + (t.match ? ` (now matches ${shortName(t.match)})` : '');
   }
 
   // Replaced elements have an intrinsic ratio; changing it stretches the pixels.
@@ -158,7 +261,7 @@
     return null;
   }
 
-  function isNoop(r) { return !r.dx && !r.dy && r.w == null && r.h == null && !r.removed && r.text == null; }
+  function isNoop(r) { return !r.dx && !r.dy && r.w == null && r.h == null && !r.removed && r.text == null && !Object.keys(r.type).length; }
 
   function prune(r) {
     if (!isNoop(r)) return;
@@ -173,6 +276,7 @@
     el.style.transform = o.transform; el.style.width = o.width; el.style.height = o.height;
     el.style.maxWidth = o.maxWidth; el.style.maxHeight = o.maxHeight;
     el.style.display = o.display; el.style.transition = o.transition;
+    TYPE.forEach((d) => { el.style[d.key] = o[d.key]; });
     state.changes.delete(el);
   }
 
@@ -417,6 +521,14 @@
     </div>
     <div data-nudge id="nudge-reload" style="display:none;padding:8px 14px;background:#3a2f12;color:#f2c86b;border-bottom:1px solid #2c2a27;">The page reloaded. Clear the preview to see the real result.</div>
     <div data-nudge id="nudge-list" style="flex:1;overflow:auto;padding:6px 0;"></div>
+    <div data-nudge id="nudge-props" style="display:none;padding:8px 14px;border-top:1px solid #2c2a27;">
+      <div data-nudge id="nudge-type" style="display:none;">
+        <div data-nudge style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+          ${['fontSize:size', 'lineHeight:line', 'letterSpacing:spacing', 'fontWeight:weight'].map((x) => { const [k, l] = x.split(':'); return `<label data-nudge style="display:flex;flex-direction:column;gap:2px;color:#6f6a62;font-size:10px;">${l}<input data-nudge data-prop="${k}" inputmode="decimal" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;margin:0;background:#242220;border:1px solid #3a3733;border-radius:4px;color:#ece7df;padding:3px 5px;font:12px ui-monospace,Menlo,monospace;"></label>`; }).join('')}
+        </div>
+        <div data-nudge id="nudge-type-match" style="display:none;margin-top:5px;color:#e0447a;font-size:11px;"></div>
+      </div>
+    </div>
     <div data-nudge style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid #2c2a27;align-items:center;">
       <button data-nudge id="nudge-copy" style="flex:1;background:#2f6fed;color:#fff;border:0;border-radius:6px;padding:8px 10px;font:600 12px system-ui;cursor:pointer">Copy for Claude Code</button>
       <button data-nudge id="nudge-recopy" style="display:none;background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Re-copy</button>
@@ -442,6 +554,7 @@
     const bits = [];
     if (r.removed) bits.push('remove');
     if (r.text != null) bits.push('text edited');
+    TYPE.forEach((d) => { if (r.type[d.key]) bits.push(`${d.label} ${fmt(r.type[d.key].to)}${d.unit}`); });
     if (r.w != null) bits.push(`width ${rnd(r.base.w)} → ${rnd(r.w)}px`);
     if (r.h != null) bits.push(`height ${rnd(r.base.h)} → ${rnd(r.h)}px`);
     if (r.locked) bits.push('ratio locked');
@@ -502,6 +615,7 @@
         lines.push(`   width ${rnd(r.base.w)}px → ${rnd(r.w)}px${capNote(r)}`);
       }
       if (r.h != null) lines.push(`   height ${rnd(r.base.h)}px → ${rnd(r.h)}px`);
+      if (!r.removed) TYPE.forEach((d) => { if (r.type[d.key]) lines.push(`   ${typeLine(r, d)}`); });
       const note = ratioNote(r);
       if (note) lines.push(`   ${note}`);
       if (r.dx || r.dy) {
@@ -519,6 +633,7 @@
     if (recs.some((r) => moved(r) && r.moveAligned)) lines.push(FOOTER.aligned);
     if (recs.some((r) => moved(r) && !r.moveAligned)) lines.push(FOOTER.spacing);
     if (recs.some((r) => !r.removed && (r.w != null || r.h != null))) lines.push(FOOTER.widths);
+    if (recs.some((r) => !r.removed && Object.keys(r.type).length)) lines.push(FOOTER.type);
     if (recs.some((r) => !r.removed && r.text != null)) lines.push(FOOTER.text);
     if (recs.some((r) => r.removed)) lines.push(FOOTER.removals);
     return lines.join('\n');
@@ -572,11 +687,65 @@
     else setStatus('Nothing to copy yet.');
   }
 
+  const typeInput = (key) => panel.querySelector(`input[data-prop="${key}"]`);
+
+  // Controls appear only for the selected element and only when they apply to it.
+  function renderProps() {
+    const el = state.selected;
+    const showType = !!el && document.contains(el) && !INTRINSIC.test(el.tagName.toUpperCase()) && ownText(el);
+    $('nudge-type').style.display = showType ? '' : 'none';
+    $('nudge-props').style.display = showType ? '' : 'none';
+    if (!showType) return;
+    const r = state.changes.get(el);
+    const live = readType(cs(el));
+    TYPE.forEach((d) => {
+      const input = typeInput(d.key);
+      if (document.activeElement === input) { if (r && r.type[d.key]) input.value = fmt(r.type[d.key].to); return; }
+      const t = r && r.type[d.key];
+      input.value = t ? fmt(t.to) : (live[d.key] == null ? 'normal' : fmt(live[d.key]));
+    });
+    const line = $('nudge-type-match');
+    const matched = r ? TYPE.filter((d) => r.type[d.key] && r.type[d.key].match) : [];
+    line.textContent = matched.map((d) => `${d.label} matches ${shortName(r.type[d.key].match)}`).join(' · ');
+    line.style.display = matched.length ? '' : 'none';
+  }
+
+  function onTypeKey(e) {
+    const d = TYPE.find((x) => x.key === e.target.dataset.prop);
+    if (!d || !state.selected) return;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const r = state.changes.get(state.selected);
+      const from = r && r.baseType ? typeFrom(r, d) : (() => { const t = readType(cs(state.selected)); return t[d.key] ?? (d.key === 'lineHeight' ? Math.round(t.fontSize * 1.2) : 0); })();
+      const size = e.altKey ? d.fine : e.shiftKey ? d.big : d.step;
+      setType(d, from + (e.key === 'ArrowUp' ? size : -size), e.altKey ? 'fine' : 'step');
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); onTypeChange(e);
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); e.target.blur(); renderProps();
+    }
+  }
+
+  function onTypeChange(e) {
+    const d = TYPE.find((x) => x.key === e.target.dataset.prop);
+    if (!d || !state.selected) return;
+    const v = parseFloat(e.target.value);
+    if (!isFinite(v)) { renderProps(); return; }
+    // A change event also fires when the field loses focus. If nothing changed, do not re-render: rebuilding
+    // the rows under the pointer would swallow the click that took the focus away, such as a row's undo.
+    const r = state.changes.get(state.selected);
+    const cur = r && r.baseType ? typeFrom(r, d) : readType(cs(state.selected))[d.key];
+    if (cur != null && Math.abs(cur - v) < 0.005) return;
+    setType(d, v, 'typed');
+  }
+
   /* ────────────────────────── selection ────────────────────────── */
 
   function select(el) {
+    if (el !== state.selected) { state.typeCands = null; matchBox.style.display = 'none'; }
     state.selected = el;
     updateBoxes();
+    renderProps();
     if (el) setStatus(descriptor(el));
     else setStatus(idleStatus());
   }
@@ -602,6 +771,9 @@
       return;
     }
     e.preventDefault(); e.stopPropagation();
+    // Cancelling the mousedown keeps focus where it was; a focused panel field would keep taking the arrow keys.
+    const ae = document.activeElement;
+    if (ae && isTool(ae) && ae !== document.body && ae.blur) ae.blur();
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (!el || el === document.body || el === document.documentElement) { select(null); return; }
     if (state.selected && (el === state.selected || state.selected.contains(el))) { startMoveDrag(e); return; }
@@ -791,6 +963,7 @@
   $('nudge-recopy').addEventListener('click', recopy);
   $('nudge-reset').addEventListener('click', resetAll);
   $('nudge-close').addEventListener('click', () => window.__nudge.destroy());
+  TYPE.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); });
   render();
 
   window.__nudge = {
