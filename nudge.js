@@ -27,6 +27,7 @@
     reloadSeq: 0,           // bumped each time the page's stylesheets reload
     notice: null,           // status prefix while re-recording a sent element
     copyLock: false,        // brief lock after Copy so a double-click cannot clear the preview
+    editing: null,          // { el, r, attr, userSelect } while an element's text is being edited
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -36,6 +37,7 @@
     aligned: 'A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.',
     spacing: 'A move with no alignment is a spacing intent: adjust margin or gap.',
     widths: 'Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.',
+    text: 'A text change replaces the old string with the new one wherever that copy lives: markup, a component, a content file or a translation.',
     removals: 'Removals delete the element from the markup.',
   };
 
@@ -82,6 +84,22 @@
     return t.length > 52 ? `"${t.slice(0, 26)}…${t.slice(-22)}"` : `"${t}"`;
   }
 
+  const collapse = (t) => (t || '').replace(/\s+/g, ' ').trim();
+  const trunc = (t) => (t.length > 52 ? `${t.slice(0, 26)}…${t.slice(-22)}` : t);
+
+  function textChange(a, b) {
+    let x = trunc(a), y = trunc(b);
+    if (x === y && a !== b) {
+      // Head-and-tail truncation hides a change in the middle, so centre both strings on the first difference.
+      let i = 0;
+      while (i < a.length && a[i] === b[i]) i++;
+      const start = Math.max(0, i - 20);
+      const win = (t) => (start > 0 ? '…' : '') + t.slice(start, start + 50) + (start + 50 < t.length ? '…' : '');
+      x = win(a); y = win(b);
+    }
+    return `text "${x}" → "${y}"`;
+  }
+
   function label(el) {
     const src = source(el);
     return descriptor(el) + (src ? ` (${src})` : '') + (snippet(el) ? ' ' + snippet(el) : '');
@@ -107,6 +125,7 @@
       },
       base: { w: rect.width, h: rect.height, maxW: c.maxWidth, maxH: c.maxHeight, cTransform: c.transform },
       dx: 0, dy: 0, w: null, h: null, removed: false, locked: false, snaps: [], moveAligned: false,
+      text: null, baseText: null, origNodes: null,
       sent: false, sentBatch: 0, sentSeq: 0,
     };
     el.style.transition = 'none';
@@ -139,7 +158,7 @@
     return null;
   }
 
-  function isNoop(r) { return !r.dx && !r.dy && r.w == null && r.h == null && !r.removed; }
+  function isNoop(r) { return !r.dx && !r.dy && r.w == null && r.h == null && !r.removed && r.text == null; }
 
   function prune(r) {
     if (!isNoop(r)) return;
@@ -149,6 +168,8 @@
 
   function undo(r) {
     const el = r.el, o = r.orig;
+    if (state.editing && state.editing.el === el) exitEditMode();
+    if (r.origNodes) el.replaceChildren(...r.origNodes.map((n) => n.cloneNode(true)));
     el.style.transform = o.transform; el.style.width = o.width; el.style.height = o.height;
     el.style.maxWidth = o.maxWidth; el.style.maxHeight = o.maxHeight;
     el.style.display = o.display; el.style.transition = o.transition;
@@ -159,7 +180,82 @@
   const sentRecs = () => allRecs().filter((r) => r.sent);
   const unsentRecs = () => allRecs().filter((r) => !r.sent);
 
-  function resetAll() { allRecs().forEach(undo); state.notice = null; select(null); render(); }
+  function resetAll() { if (state.editing) endEdit(); allRecs().forEach(undo); state.notice = null; select(null); render(); }
+
+  /* ────────────────────────── text editing ────────────────────────── */
+
+  // Only text can be edited: an element with child elements would let an edit restructure markup.
+  // Comment nodes are allowed because React inserts <!-- --> between text segments.
+  function cannotEdit(el) {
+    if (INTRINSIC.test(el.tagName.toUpperCase())) return 'this element has no text to edit';
+    const child = el.children[0];
+    if (child) return `this element contains other elements (${child.tagName.toLowerCase()}); double-click the innermost text instead`;
+    if (!el.textContent.trim()) return 'this element has no text to edit';
+    return null;
+  }
+
+  function startEdit(el, x, y) {
+    const why = cannotEdit(el);
+    if (why) { setStatus(`Cannot edit text: ${why}.`); return; }
+    state.notice = null;
+    const r = rec(el);
+    if (!r.origNodes) { r.origNodes = [...el.childNodes].map((n) => n.cloneNode(true)); r.baseText = el.textContent; }
+    state.editing = { el, r, attr: el.getAttribute('contenteditable'), userSelect: el.style.userSelect };
+    // plaintext-only blocks formatting shortcuts and rich paste; the fallback relies on the input guards below.
+    el.contentEditable = 'plaintext-only';
+    if (el.contentEditable !== 'plaintext-only') el.contentEditable = 'true';
+    el.style.userSelect = 'text';
+    el.focus({ preventScroll: true });
+    const range = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
+    if (range && el.contains(range.startContainer)) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+    updateBoxes();
+    setStatus(withNotice('Editing text. Escape or click elsewhere to finish.'));
+  }
+
+  function exitEditMode() {
+    const ed = state.editing;
+    if (!ed) return null;
+    state.editing = null;
+    if (ed.attr == null) ed.el.removeAttribute('contenteditable'); else ed.el.setAttribute('contenteditable', ed.attr);
+    ed.el.style.userSelect = ed.userSelect;
+    if (document.activeElement === ed.el) ed.el.blur();
+    return ed;
+  }
+
+  function endEdit() {
+    const ed = exitEditMode();
+    if (!ed || state.changes.get(ed.el) !== ed.r) return;
+    const r = ed.r, now = ed.el.textContent;
+    r.text = now === r.baseText ? null : now;
+    // Typing and deleting back can still merge text nodes or drop React's comment markers; put them back.
+    if (r.text == null) ed.el.replaceChildren(...r.origNodes.map((n) => n.cloneNode(true)));
+    prune(r);
+    render(); updateBoxes();
+    setStatus(withNotice(summary(r) || descriptor(ed.el)));
+  }
+
+  const inEdit = (t) => !!(state.editing && t && state.editing.el.contains(t));
+
+  function onDblClick(e) {
+    if (isTool(e.target)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (state.editing || !state.selected) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el || (el !== state.selected && !state.selected.contains(el))) return;
+    startEdit(state.selected, e.clientX, e.clientY);
+  }
+
+  const STRUCTURAL = /^(format|insertParagraph$|insertLineBreak$|insertFromDrop$|insertHorizontalRule$|insertOrderedList$|insertUnorderedList$|insertLink$)/;
+  function onBeforeInput(e) { if (inEdit(e.target) && STRUCTURAL.test(e.inputType)) e.preventDefault(); }
+
+  function onPaste(e) {
+    if (!inEdit(e.target)) return;
+    e.preventDefault();
+    const text = collapse(e.clipboardData ? e.clipboardData.getData('text/plain') : '');
+    if (text) document.execCommand('insertText', false, text);
+  }
+
+  function onDrop(e) { if (inEdit(e.target)) e.preventDefault(); }
 
   /* ────────────────────────── snapping ────────────────────────── */
 
@@ -345,6 +441,7 @@
   function summary(r) {
     const bits = [];
     if (r.removed) bits.push('remove');
+    if (r.text != null) bits.push('text edited');
     if (r.w != null) bits.push(`width ${rnd(r.base.w)} → ${rnd(r.w)}px`);
     if (r.h != null) bits.push(`height ${rnd(r.base.h)} → ${rnd(r.h)}px`);
     if (r.locked) bits.push('ratio locked');
@@ -400,6 +497,7 @@
     recs.forEach((r, i) => {
       lines.push(`${i + 1}. ${label(r.el)}`);
       if (r.removed) lines.push('   remove this element from the markup');
+      else if (r.text != null) lines.push(`   ${textChange(collapse(r.baseText), collapse(r.text))}`);
       if (r.w != null) {
         lines.push(`   width ${rnd(r.base.w)}px → ${rnd(r.w)}px${capNote(r)}`);
       }
@@ -421,6 +519,7 @@
     if (recs.some((r) => moved(r) && r.moveAligned)) lines.push(FOOTER.aligned);
     if (recs.some((r) => moved(r) && !r.moveAligned)) lines.push(FOOTER.spacing);
     if (recs.some((r) => !r.removed && (r.w != null || r.h != null))) lines.push(FOOTER.widths);
+    if (recs.some((r) => !r.removed && r.text != null)) lines.push(FOOTER.text);
     if (recs.some((r) => r.removed)) lines.push(FOOTER.removals);
     return lines.join('\n');
   }
@@ -494,6 +593,10 @@
   function onDown(e) {
     if (e.button !== 0) return;
     const t = e.target;
+    if (state.editing) {
+      if (!isTool(t) && inEdit(t)) return;   // caret placement and text selection stay native
+      endEdit();
+    }
     if (isTool(t)) {
       if (t.dataset.handle && state.selected) { startResize(e, t.dataset.handle); e.preventDefault(); e.stopPropagation(); }
       return;
@@ -607,6 +710,11 @@
   }
 
   function onKey(e) {
+    if (state.editing) {
+      if (e.key === 'Escape') { e.preventDefault(); endEdit(); }
+      else if (e.key === 'Enter') e.preventDefault();
+      return;   // every other key edits the text
+    }
     // Panel buttons keep focus after a click because page mousedowns are cancelled, so only text fields may swallow keys.
     if (isTool(e.target) && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
     if (e.key === 'Escape') { select(null); return; }
@@ -669,6 +777,10 @@
   document.addEventListener('click', onClick, opts);
   document.addEventListener('keydown', onKey, opts);
   document.addEventListener('contextmenu', onContext, opts);
+  document.addEventListener('dblclick', onDblClick, opts);
+  document.addEventListener('beforeinput', onBeforeInput, opts);
+  document.addEventListener('paste', onPaste, opts);
+  document.addEventListener('drop', onDrop, opts);
   window.addEventListener('scroll', onScroll, true);
   window.addEventListener('resize', onScroll);
 
@@ -691,6 +803,10 @@
       document.removeEventListener('click', onClick, opts);
       document.removeEventListener('keydown', onKey, opts);
       document.removeEventListener('contextmenu', onContext, opts);
+      document.removeEventListener('dblclick', onDblClick, opts);
+      document.removeEventListener('beforeinput', onBeforeInput, opts);
+      document.removeEventListener('paste', onPaste, opts);
+      document.removeEventListener('drop', onDrop, opts);
       window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onScroll);
       overlay.remove(); panel.remove();
@@ -705,6 +821,7 @@
       get drag() { return state.drag; },
       get batch() { return state.batch; },
       get reloadSeq() { return state.reloadSeq; },
+      get editing() { return state.editing && state.editing.el; },
       els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles },
     },
   };

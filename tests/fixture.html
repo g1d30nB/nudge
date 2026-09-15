@@ -30,6 +30,9 @@
   #media img { display: block; background: #cdd6e4; }
   #fluid { padding: 40px; }
   .fluid-box { max-width: clamp(200px, 33.37vw, 900px); padding: 12px; box-sizing: border-box; background: #eadbd0; }
+  #copy { padding: 40px; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+  #copy p, #copy span { margin: 0; }
+  .copy-long { max-width: 900px; }
   #tail { height: 700px; }
 </style>
 </head>
@@ -89,6 +92,13 @@
 
 <section id="fluid">
   <div class="fluid-box" data-test="fluid">A box capped by a fluid max-width.</div>
+</section>
+
+<section id="copy">
+  <p class="copy-line" data-test="edit">Plans your team will read</p>
+  <p class="copy-mixed" data-test="mixed">Some <strong>bold</strong> words here</p>
+  <span class="copy-comment" data-test="commented">Hello <!-- -->world</span>
+  <p class="copy-long" data-test="long">A long sentence that runs on for a while, so that head and tail truncation would hide a change made in the middle of it entirely.</p>
 </section>
 
 <div id="tail"></div>
