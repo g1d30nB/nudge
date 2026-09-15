@@ -131,15 +131,28 @@
         letterSpacing: el.style.letterSpacing, fontWeight: el.style.fontWeight,
         color: el.style.color, backgroundColor: el.style.backgroundColor,
       },
-      base: { w: rect.width, h: rect.height, maxW: c.maxWidth, maxH: c.maxHeight, cTransform: c.transform },
+      base: { w: rect.width, h: rect.height, maxW: c.maxWidth, maxH: c.maxHeight, cTransform: c.transform, capped: false },
       dx: 0, dy: 0, w: null, h: null, removed: false, locked: false, snaps: [], moveAligned: false,
       text: null, baseText: null, origNodes: null,
       type: {}, baseType: null, colour: {}, baseColour: {},
       sent: false, sentBatch: 0, sentSeq: 0,
     };
     el.style.transition = 'none';
+    if (c.maxWidth !== 'none') r.base.capped = heldByMaxWidth(el);
     state.changes.set(el, r);
     return r;
+  }
+
+  // Is max-width what holds this element's width down? Lift it for one synchronous measurement: no frame is
+  // painted in between, so nothing flickers. This works for px, %, calc() and clamp() alike, and an element
+  // narrower than its cap no longer gets told it was capped.
+  function heldByMaxWidth(el) {
+    const before = parseFloat(cs(el).width);
+    const prev = el.style.getPropertyValue('max-width'), pri = el.style.getPropertyPriority('max-width');
+    el.style.setProperty('max-width', 'none', 'important');
+    const free = parseFloat(cs(el).width);
+    el.style.setProperty('max-width', prev, pri);
+    return free > before + 0.5;
   }
 
   function apply(r) {
@@ -242,6 +255,22 @@
   }
 
   // Computed line height is always in pixels even when the source is unitless, so give the ratio too.
+  // Computed font size and letter spacing are always px. Give the rem and em equivalents on their own line
+  // so the agent can match whichever unit the source uses, instead of hard-coding pixels.
+  const fmt4 = (n) => String(Math.round(n * 10000) / 10000);
+  function typeUnitsLine(r, d) {
+    const t = r.type[d.key], b = r.baseType[d.key];
+    if (d.key === 'fontSize') {
+      const root = parseFloat(cs(document.documentElement).fontSize) || 16;
+      return `as rem at a ${fmt(root)}px root: ${fmt4(b / root)}rem → ${fmt4(t.to / root)}rem`;
+    }
+    if (d.key === 'letterSpacing') {
+      const fsBase = r.baseType.fontSize, fsNow = r.type.fontSize ? r.type.fontSize.to : fsBase;
+      return `as em of the font size: ${b == null ? 'normal' : fmt4(b / fsBase) + 'em'} → ${fmt4(t.to / fsNow)}em`;
+    }
+    return null;
+  }
+
   function typeLine(r, d) {
     const t = r.type[d.key], b = r.baseType[d.key];
     let line = `${d.name} ${b == null ? 'normal' : fmt(b) + d.unit} → ${fmt(t.to)}${d.unit}`;
@@ -692,7 +721,7 @@
   // invites the agent to hard-code it, so say it was computed instead.
   function capNote(r) {
     const m = r.base.maxW;
-    if (!m || m === 'none') return '';
+    if (!m || m === 'none' || !r.base.capped) return '';
     const n = /^(\d+(?:\.\d+)?)px$/.exec(m);
     if (n && !Number.isInteger(parseFloat(n[1]))) return ` (the element was capped at ${rnd(parseFloat(n[1]))}px by a computed max-width, check the source for the rule)`;
     return ` (was capped by max-width: ${m})`;
@@ -710,7 +739,12 @@
         lines.push(`   width ${rnd(r.base.w)}px → ${rnd(r.w)}px${capNote(r)}`);
       }
       if (r.h != null) lines.push(`   height ${rnd(r.base.h)}px → ${rnd(r.h)}px`);
-      if (!r.removed) TYPE.forEach((d) => { if (r.type[d.key]) lines.push(`   ${typeLine(r, d)}`); });
+      if (!r.removed) TYPE.forEach((d) => {
+        if (!r.type[d.key]) return;
+        lines.push(`   ${typeLine(r, d)}`);
+        const units = typeUnitsLine(r, d);
+        if (units) lines.push(`   ${units}`);
+      });
       if (!r.removed) COLOUR.forEach((d) => { if (r.colour[d.key]) lines.push(`   ${colourLine(r, d)}`); });
       const note = ratioNote(r);
       if (note) lines.push(`   ${note}`);

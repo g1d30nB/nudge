@@ -44,6 +44,11 @@
   .swatch-card { background: var(--surface-2); color: var(--ink-muted); padding: 12px; }
   .ink-text { color: var(--ink); margin: 0; }
   .plain-box { padding: 12px; }
+  #caps { padding: 40px; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+  .roomy { width: 300px; max-width: 800px; background: #dfe7da; padding: 8px; box-sizing: border-box; }
+  .pct-wrap { width: 600px; }
+  .pct { max-width: 50%; background: #e7dada; padding: 8px; box-sizing: border-box; }
+  .type-em { font-size: 2rem; letter-spacing: -0.035em; margin: 0; }
   #tail { height: 700px; }
 </style>
 </head>
@@ -123,6 +128,12 @@
   <div class="swatch-card" data-test="card">A card on a token surface</div>
   <p class="ink-text" data-test="ink">Text set in the ink token</p>
   <div class="plain-box" data-test="plain">A box with no background</div>
+</section>
+
+<section id="caps">
+  <div class="roomy" data-test="roomy">Narrower than its max-width</div>
+  <div class="pct-wrap"><div class="pct" data-test="pct">Held by a percentage max-width</div></div>
+  <p class="type-em" data-test="em">Sized in rem, tracked in em</p>
 </section>
 
 <div id="tail"></div>

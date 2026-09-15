@@ -1046,3 +1046,44 @@ test('49 stepper arrows appear on hover or focus and step like the arrow keys', 
 
   expect((await changes(page))[0]).toMatchObject({ dx: 0, dy: 0 });
 });
+
+/* ───────────── batch accuracy (checks 50–51) ───────────── */
+
+test('50 the max-width note appears only when the max-width was holding the width down', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=roomy]');
+  await resizeE(page, '[data-test=roomy]', 100);
+  let text = await report(page);
+  expect(text).toContain('width 300px → 400px');
+  expect(text).not.toContain('capped');
+
+  await page.locator('#nudge-reset').click();
+  await select(page, '[data-test=pct]');
+  await resizeE(page, '[data-test=pct]', 100);
+  text = await report(page);
+  expect(text).toContain('width 300px → 400px (was capped by max-width: 50%)');
+
+  // Measuring the cap leaves no trace on the element once undone.
+  await page.locator('#nudge-list button').first().click();
+  expect(await cssText(page, '[data-test=pct]')).toBe('');
+});
+
+test('51 computed font size and letter spacing come with rem and em equivalents', async ({ page }) => {
+  await inject(page);
+  const EM = '[data-test=em]';
+  await select(page, EM);
+  await expect(typeField(page, 'fontSize')).toHaveValue('32');
+  await expect(typeField(page, 'letterSpacing')).toHaveValue('-1.12');
+  await typeField(page, 'letterSpacing').press('ArrowUp');
+  let lines = await reportLines(page);
+  expect(lines).toContain('letter spacing -1.12px → -0.12px');
+  expect(lines).toContain('as em of the font size: -0.035em → -0.0038em');   // -0.12 / 32, rounded to 4 places
+  await typeField(page, 'fontSize').press('ArrowUp');
+  lines = await reportLines(page);
+  const i = lines.indexOf('font size 32px → 33px');
+  expect(i).toBeGreaterThan(-1);
+  expect(lines[i + 1]).toBe('as rem at a 16px root: 2rem → 2.0625rem');
+  // Letter spacing in em is now measured against the new font size.
+  expect(lines).toContain('as em of the font size: -0.035em → -0.0036em');
+  expect(lines.indexOf('letter spacing -1.12px → -0.12px')).toBeGreaterThan(i + 1);
+});
