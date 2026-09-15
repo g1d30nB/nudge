@@ -675,3 +675,133 @@ test('30 keyboard shortcuts still work after clicking a panel button', async ({ 
   await page.keyboard.press('Escape');
   expect(await selectedIs(page, null)).toBe(true);
 });
+
+/* ───────────── text editing (checks 31–36) ───────────── */
+
+const EDIT = '[data-test=edit]';
+const TEXT_FOOTER = 'A text change replaces the old string with the new one wherever that copy lives: markup, a component, a content file or a translation.';
+const editingEl = (page) => page.evaluate(() => { const e = window.__nudge._state.editing; return e ? (e.getAttribute('data-test') || e.id) : null; });
+
+// Put the caret at the end of the element being edited. The End key does not do this on macOS.
+const caretToEnd = (page, sel) => page.evaluate((s) => {
+  const el = document.querySelector(s); const range = document.createRange();
+  range.selectNodeContents(el); range.collapse(false);
+  const g = getSelection(); g.removeAllRanges(); g.addRange(range);
+}, sel);
+
+// Double-click the middle of an element's first text run, which is where a person would aim.
+async function dblclickText(page, sel) {
+  await into(page, sel);
+  const p = await page.evaluate((s) => {
+    const el = document.querySelector(s);
+    const tn = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+    const range = document.createRange(); range.selectNodeContents(tn);
+    const b = range.getClientRects()[0];
+    return { x: b.left + Math.min(b.width / 2, 30), y: b.top + b.height / 2 };
+  }, sel);
+  await page.mouse.dblclick(p.x, p.y);
+}
+
+test('31 double-click edits text in place; Escape commits; the batch reports old and new', async ({ page }) => {
+  await inject(page);
+  await dblclickText(page, EDIT);
+  expect(await editingEl(page)).toBe('edit');
+  expect(['plaintext-only', 'true']).toContain(await page.evaluate((s) => document.querySelector(s).contentEditable, EDIT));
+  await expect(page.locator('#nudge-status')).toHaveText('Editing text. Escape or click elsewhere to finish.');
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('Plans people read');
+  await page.keyboard.press('Escape');
+  expect(await editingEl(page)).toBeNull();
+  expect(await page.evaluate((s) => document.querySelector(s).hasAttribute('contenteditable'), EDIT)).toBe(false);
+  expect(await page.evaluate((s) => document.querySelector(s).textContent, EDIT)).toBe('Plans people read');
+  const text = await report(page);
+  expect(text).toContain('text "Plans your team will read" → "Plans people read"');
+  expect(footerOf(text)).toEqual([FOOTER.apply, TEXT_FOOTER]);
+  await expect(page.locator('#nudge-list')).toContainText('text edited');
+});
+
+test('32 an element containing other elements is refused with a reason', async ({ page }) => {
+  await inject(page);
+  await dblclickText(page, '[data-test=mixed]');
+  expect(await editingEl(page)).toBeNull();
+  await expect(page.locator('#nudge-status')).toHaveText('Cannot edit text: this element contains other elements (strong); double-click the innermost text instead.');
+  expect(await page.evaluate(() => document.querySelector('[data-test=mixed]').hasAttribute('contenteditable'))).toBe(false);
+  expect(await changes(page)).toHaveLength(0);
+});
+
+test('33 no markup can enter: Enter, formatting shortcuts and rich paste stay plain text', async ({ page }) => {
+  await inject(page);
+  await dblclickText(page, EDIT);
+  await caretToEnd(page, EDIT);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+B');
+  await page.keyboard.type(' now');
+  await page.evaluate((s) => {
+    const el = document.querySelector(s);
+    const dt = new DataTransfer();
+    dt.setData('text/html', '<b>bold</b><div>block</div>');
+    dt.setData('text/plain', 'bold\nblock');
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, EDIT);
+  const state = await page.evaluate((s) => { const el = document.querySelector(s); return { children: el.children.length, text: el.textContent }; }, EDIT);
+  expect(state.children).toBe(0);
+  expect(state.text).not.toContain('\n');
+  expect(state.text).toContain('bold block');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate((s) => document.querySelector(s).children.length, EDIT)).toBe(0);
+});
+
+test('34 a click elsewhere commits; undo restores the original nodes exactly', async ({ page }) => {
+  await inject(page);
+  const sel = '[data-test=commented]';
+  const before = await page.evaluate((s) => document.querySelector(s).innerHTML, sel);
+  expect(before).toContain('<!--');
+  await dblclickText(page, sel);
+  await caretToEnd(page, sel);
+  await page.keyboard.type('!');
+  await select(page, '#rotated');
+  expect(await editingEl(page)).toBeNull();
+  expect(await report(page)).toContain('text "Hello world" → "Hello world!"');
+  await page.locator('#nudge-list button').first().click();
+  expect(await page.evaluate((s) => document.querySelector(s).innerHTML, sel)).toBe(before);
+  expect(await changes(page)).toHaveLength(0);
+});
+
+test('35 while editing, keys edit the text instead of triggering nudge shortcuts', async ({ page }) => {
+  await inject(page);
+  await dblclickText(page, EDIT);
+  await caretToEnd(page, EDIT);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Shift+ArrowLeft');
+  expect(await computed(page, EDIT, 'display')).not.toBe('none');
+  expect(await editingEl(page)).toBe('edit');
+  await page.keyboard.press('Escape');
+  const [c] = await changes(page);
+  expect(c).toMatchObject({ dx: 0, dy: 0, removed: false });
+  expect(await page.evaluate((s) => document.querySelector(s).textContent, EDIT)).toBe('Plans your team will rea');
+  // After committing, shortcuts work again.
+  await page.keyboard.press('ArrowDown');
+  expect((await changes(page))[0].dy).toBe(1);
+});
+
+test('36 a change hidden by head-and-tail truncation is shown around the difference', async ({ page }) => {
+  await inject(page);
+  const sel = '[data-test=long]';
+  await dblclickText(page, sel);
+  await page.evaluate((s) => {
+    const tn = document.querySelector(s).firstChild;
+    const i = tn.textContent.indexOf('middle');
+    const range = document.createRange(); range.setStart(tn, i); range.setEnd(tn, i + 'middle'.length);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  }, sel);
+  await page.keyboard.type('centre');
+  await page.keyboard.press('Escape');
+  const line = (await report(page)).split('\n').find((l) => l.includes('text "'));
+  const m = line.match(/text "(.*)" → "(.*)"$/);
+  expect(m).not.toBeNull();
+  expect(m[1]).not.toBe(m[2]);
+  expect(m[1]).toContain('middle');
+  expect(m[2]).toContain('centre');
+  expect(m[1].length).toBeLessThanOrEqual(53);
+});
