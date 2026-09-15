@@ -34,14 +34,14 @@
   <p class="lede">Drag on the running page, then paste the measurements into your coding agent.</p>
 
   <div class="install">
-    <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.0.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
+    <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.1.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
     <p>Drag this button to your bookmarks bar. That is the whole install.</p>
   </div>
 
   <h2>Use it</h2>
   <ol>
     <li>Open the page you are working on and click the bookmark. A panel appears in the bottom right corner.</li>
-    <li>Click an element, then drag it, resize it from its handles, or press Backspace to remove it.</li>
+    <li>Click an element, then drag it, resize it from its handles, or press Backspace to remove it. Double-click text to edit it; with text selected, adjust its type and colour in the panel.</li>
     <li>Press <strong>Copy for Claude Code</strong> and paste the batch into your agent. It edits your source; nudge never does.</li>
     <li>When your agent has applied it, press <strong>Clear preview</strong> to see the page as your code now renders it.</li>
     <li>Click the bookmark again to close the panel.</li>
@@ -49,7 +49,7 @@
 
   <h2>If you cannot drag the button</h2>
   <p>Create a new bookmark by hand and paste this line as its URL.</p>
-  <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.0.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
+  <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.1.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
 
   <footer>
     Source, limitations and how to contribute: <a href="https://github.com/g1d30nB/nudge">github.com/g1d30nB/nudge</a>. MIT licence.

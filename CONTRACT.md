@@ -139,11 +139,11 @@ First run: three failures. Two were test assumptions (the fixture body sets line
 
 Both branches were committed and merged before their contract and CLAUDE.md entries were written, because a shell chain stopped early; these entries were added afterwards on `docs/text-and-type`.
 
-## Token-aware colour (15 Sep 2026, branch feat/colour, checks 43–48, NOT MERGED)
+## Token-aware colour (15 Sep 2026, branch feat/colour, checks 43–48)
 
 Text colour for elements with their own text; background colour only where a background already exists. Tokens are the custom properties declared on `:root` (including inside @media, @supports and @layer), resolved against the rendered page and converted to sRGB bytes by painting a pixel, so any colour space compares. Choosing a token previews `var(--token)`; the picker is a fallback that reports a token when its value matches one and says no token matched otherwise.
 
-48/48 on the first run, stable over `--repeat-each 3`, no existing test changed. Held back from main on the restraint rule: with a palette open the panel stacks four labelled type fields, colour chips, a swatch grid, a picker and a warning, about 400px tall on a real token set, which reads as an inspector.
+48/48 on the first run, stable over `--repeat-each 3`, no existing test changed. Held back at first on the restraint rule: with a palette open the panel stacks four labelled type fields, colour chips, a swatch grid, a picker and a warning, about 410px tall on a 900px screen. Merged as is on 15 Sep 2026 by decision, and released in v1.1.0.
 
 ## Type steppers (added 15 Sep 2026, branch feat/type-steppers, check 49)
 

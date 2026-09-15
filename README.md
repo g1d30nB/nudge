@@ -31,7 +31,7 @@ Go to the [install page](https://g1d30nb.github.io/nudge/) and drag the link to 
 There is no clone, no server, no npm, and nothing is added to your project. The bookmark loads `nudge.js` from jsDelivr when you click it. If you would rather make the bookmark by hand, paste this line as its URL:
 
 ```
-javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.0.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
+javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.1.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
 ```
 
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.
@@ -44,6 +44,9 @@ It works on any page in the browser, including a live site. The batch is only us
 - Drag the right, bottom or corner handle to resize. The moving edge snaps to other elements' edges, and the width or height snaps when it matches another element's; a dashed box appears over the element you now match.
 - Hold **Option** while resizing to lock the aspect ratio, so the element scales instead of stretching. On the corner handle, whichever direction you move further drives the size and the other follows.
 - Arrow keys nudge 1px, Shift and an arrow nudges 10px. Backspace removes. Esc deselects.
+- Double-click a selected element to edit its text in place. Escape or a click elsewhere finishes. Only elements with no child elements can be edited, and only as plain text; the batch reports the old string and the new one.
+- With a text element selected, the panel shows its font size, line height, letter spacing and weight. Step them with the arrow keys or the small arrows that appear in each box: 1 at a time, 10 with Shift, a fine step with Option. A value that lands on another element's value snaps to it, and the batch says so: `font size 17px → 21px (now matches .lede)`.
+- The panel also shows the element's text colour, and its background colour where it already has one. Click either to open a palette built from the colour tokens declared on `:root`, with the current token marked. The batch reports token names, such as `colour var(--ink-muted) → var(--ink)`. The colour picker under the palette is for anything else, and the batch then says no token matched that value.
 - Hold Shift while dragging to disable snapping. Release with Shift held and no alignment is recorded; the move is taken as exact.
 - Changes stay on the page as a preview. Each change has its own undo, and Reset clears them all.
 - **Copy for Claude Code** puts the batch on the clipboard and marks those changes as sent: their rows dim and show a tick. The preview stays on the page, so if the paste does not take you can press **Re-copy**. Paste the batch into your agent as the whole message.
@@ -106,20 +109,23 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 - No write-back. nudge describes changes; it never edits files.
 - A hot reload that rebuilds an element drops its preview. Copy before you save a file your dev server is watching.
 - Resize handles are right, bottom and corner only.
-- No text editing.
+- Text editing is plain text only, in elements with no child elements.
+- No font family control. nudge cannot see which fonts are installed or loaded.
+- Type values are read from the rendered page, so they are always in pixels even when the source uses rem, em or clamp. Line height also gives its ratio to the font size.
+- The colour palette only lists tokens declared on `:root`. Tokens in stylesheets served from another site cannot be read.
 - No multi-select.
 - No gesture to select an element's parent.
 - Pages with a Content-Security-Policy that blocks external scripts refuse the loader, and the bookmark does nothing.
 
 ## Where it is going
 
-The open issues are the roadmap. Text editing, type size and spacing, token-aware colour and gap adjustment are the four I most want, roughly in that order.
+The open issues are the roadmap. Text editing, type and token-aware colour arrived in v1.1.0; adjusting the gap between elements is the one I most want next.
 
 nudge will not gain the ability to add elements or change layout mode. It corrects what is there; it is not somewhere to build a page.
 
 ## Early days
 
-nudge changes nothing on disk. Everything it does is inline styles on the page in front of you; Reset or a refresh clears them.
+nudge changes nothing on disk. Everything it does is inline styles and text on the page in front of you; Reset or a refresh clears them.
 
 The change that lands in your code is the one your agent makes from the batch. Commit before you paste it, and read the diff, the same as any other agent edit.
 
@@ -151,11 +157,15 @@ npx playwright install chromium
 npm test
 ```
 
-Thirty headless Chromium checks in `tests/nudge.spec.mjs`, one per row of the GOOD table in `CONTRACT.md`, run against `tests/fixture.html`. The fixture is served from `https://nudge.test/` by a Playwright route so clipboard APIs exist; no server or certificate is needed.
+Forty-nine headless Chromium checks in `tests/nudge.spec.mjs`, one per row of the GOOD table in `CONTRACT.md`, run against `tests/fixture.html`. The fixture is served from `https://nudge.test/` by a Playwright route so clipboard APIs exist; no server or certificate is needed.
 
 ## Stack
 
 One file, no build, no dependencies. Vanilla JS, inline styles, and `data-nudge` attributes that keep the tool's own DOM out of selection.
+
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

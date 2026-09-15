@@ -6,11 +6,12 @@ Public repo: https://github.com/g1d30nB/nudge (MIT). Install page: https://g1d30
 
 ## Files
 
-- `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr pinned to a release tag (`cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.0.0/nudge.js`); the development bookmarklet, used while building, loads it from 127.0.0.1:7357.
+- `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr pinned to a release tag (`cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.1.0/nudge.js`); the development bookmarklet, used while building, loads it from 127.0.0.1:7357.
 - `bookmarklet.txt`: both loaders, labelled.
 - `docs/nudge-demo.gif`: the README demo. Recorded on a throwaway wireframe page that is not in the repo (kept locally in `demo/`, gitignored). Keep it under about 5MB.
 - `docs/index.html`: install page with the draggable `javascript:` link, served by GitHub Pages. GitHub strips `javascript:` links from rendered READMEs, which is why this page exists.
 - `LICENSE`: MIT.
+- `CHANGELOG.md`: what changed in each release. Update it with every tag.
 - `README.md`: usage and limits.
 - `CONTRACT.md`: the v1 contract plus extensions: DONE, the 24 GOOD checks, test plan, outcomes.
 - `tests/fixture.html`: reproduces both originating cases plus a link, a rotated element, Astro source attributes, below-fold content.
@@ -27,7 +28,7 @@ python3 -m http.server 7357 --bind 127.0.0.1
 
 ## Publishing
 
-Installed bookmarks load `cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.0.0/nudge.js`, pinned to the `v1.0.0` tag. Pushes to `main` do not reach them. `main` still publishes the install page (GitHub Pages from `/docs`) and the README.
+Installed bookmarks load `cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.1.0/nudge.js`, pinned to the `v1.1.0` tag (v1.0.0 before 15 Sep 2026; bookmarks installed then stay on it until reinstalled). Pushes to `main` do not reach them. `main` still publishes the install page (GitHub Pages from `/docs`) and the README.
 
 While building, use the development bookmarklet in `bookmarklet.txt`. It loads `nudge.js` from 127.0.0.1:7357, so serve this folder first.
 
@@ -58,7 +59,7 @@ Runs `node --check nudge.js` then the Playwright suite. 30/30 as of 15 Sep 2026,
 - Type candidates are collected once per selection. Base values are read on the first type change for the record, all four at once, because a unitless line height changes in px when font size changes.
 - Page mousedowns blur any focused panel field before selecting, otherwise arrows keep stepping type after the user has clicked a different element.
 - A field's change event that does not change the value must not re-render: rebuilding rows under the pointer swallows the click that caused the blur.
-- Colour (branch `feat/colour`, not merged): chips for text colour (own text only) and background colour (existing background only). Palette opens from a chip: colour tokens declared on `:root`, resolved on the live page, compared as sRGB bytes via a one-pixel canvas; picker below as fallback. Batch reports token names, `var(--a) or var(--b)` when tokens share a value, and `(no token matched this value, check whether one should exist)` for a raw value. The palette DOM is only rebuilt when a different palette opens, so the native picker is not torn down while in use. Held back because the fully open panel reads as an inspector.
+- Colour: chips for text colour (own text only) and background colour (existing background only). Palette opens from a chip: colour tokens declared on `:root`, resolved on the live page, compared as sRGB bytes via a one-pixel canvas; picker below as fallback. Batch reports token names, `var(--a) or var(--b)` when tokens share a value, and `(no token matched this value, check whether one should exist)` for a raw value. The palette DOM is only rebuilt when a different palette opens, so the native picker is not torn down while in use. With the palette open the panel is about 410px tall on a 900px screen; merged as is by decision on 15 Sep 2026, closing to about 290px.
 - Type fields have stepper arrows, shown only on hover or focus. Arrows keys and steppers share `stepType`, so step sizes and snapping cannot drift apart. Steppers call `preventDefault` on mousedown to keep focus in the field, and repeat after 400ms at 70ms intervals while held.
 - The panel is anchored to the bottom, so any element appearing inside it moves everything above it upward. Anything that toggles near a control the pointer may be on (the type match line) must reserve its space and toggle `visibility`, not `display`.
 - Copy serialises final state only, not history. One line per touched element.
