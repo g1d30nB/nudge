@@ -34,7 +34,7 @@
   <p class="lede">Drag on the running page, then paste the measurements into your coding agent.</p>
 
   <div class="install">
-    <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
+    <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
     <p>Drag this button to your bookmarks bar. That is the whole install.</p>
   </div>
 
@@ -42,6 +42,8 @@
   <ol>
     <li>Open the page you are working on and click the bookmark. A panel appears in the bottom right corner.</li>
     <li>Click an element, then drag it, resize it from its handles, or press Backspace to remove it. Double-click text to edit it; with text selected, adjust its type and colour in the panel.</li>
+    <li>Hold Option and press the up arrow to select the parent of what you clicked, for wrappers you cannot click directly. Option and the down arrow comes back.</li>
+    <li>Click the panel's header to fold it out of the way while you work; click it again to expand.</li>
     <li>Press <strong>Copy for Claude Code</strong> and paste the batch into your agent. It edits your source; nudge never does.</li>
     <li>When your agent has applied it, press <strong>Clear preview</strong> to see the page as your code now renders it.</li>
     <li>Click the bookmark again to close the panel.</li>
@@ -49,7 +51,7 @@
 
   <h2>If you cannot drag the button</h2>
   <p>Create a new bookmark by hand and paste this line as its URL.</p>
-  <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
+  <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
 
   <h2>In your project, for Claude Code's browser</h2>
   <p>Claude Code's built-in browser has no bookmarks bar. Put nudge in the project instead and it loads as a small blue dot in the bottom left corner while you develop. Click the dot to open it. It is the same file, and it cannot reach your live site: the tag only exists in development, and nudge refuses to run anywhere but a local address.</p>
@@ -58,12 +60,12 @@
 
 nudge is a design-correction tool: https://github.com/g1d30nB/nudge. It is one script file. Add this tag to the layout or entry point that every page shares, so it is present when I run the dev server and absent from any production build:
 
-&lt;script src=&quot;https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js&quot; data-nudge-dormant&gt;&lt;/script&gt;
+&lt;script src=&quot;https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js&quot; data-nudge-dormant&gt;&lt;/script&gt;
 
 Rules:
 - Keep the data-nudge-dormant attribute exactly as written. Without it nudge opens a panel on every page load.
 - Guard the tag with this framework&#x27;s own development flag (for example import.meta.env.DEV, process.env.NODE_ENV === &#x27;development&#x27;, or import.meta.dev), so it cannot reach a production build. Do not rely on a runtime check instead.
-- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.2.0 into the public folder and point the tag at /nudge.js instead.
+- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.2.1 into the public folder and point the tag at /nudge.js instead.
 - Change nothing else.
 - When you are done, start the dev server, tell me which file you changed, and remind me that the small blue dot in the bottom left corner of the page opens nudge.</pre>
   <p>To take it out again: <em>Remove nudge from this project: delete the script tag and any code you added to load it.</em> Details and snippets for each framework are in the <a href="https://github.com/g1d30nB/nudge#putting-nudge-in-your-project">README</a>.</p>
