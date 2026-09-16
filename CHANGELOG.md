@@ -2,11 +2,11 @@
 
 Installed bookmarks are pinned to a release. To get a new release, reinstall the bookmark from the [install page](https://g1d30nb.github.io/nudge/).
 
-## Unreleased
+## v1.2.0, 16 September 2026
 
 ### Added
 
-- **A second install path.** A script tag carrying `data-nudge-dormant` loads the same file asleep: a small dot bottom left instead of a panel. Click the dot to open nudge, close to return to the dot. Meant for a project's dev layout, guarded by the framework's dev flag; the README has snippets for Astro, Next.js, Vite, SvelteKit, Nuxt and plain HTML.
+- **A second install path.** A script tag carrying `data-nudge-dormant` loads the same file asleep: a small dot bottom left instead of a panel. Click the dot to open nudge, close to return to the dot. Meant for a project's dev layout, so nudge works inside Claude Code's built-in browser, which has no bookmarks bar. The README has a prompt to paste into Claude Code that adds it correctly for any framework, plus checked snippets for Astro, Next.js, Vite, SvelteKit, Nuxt and plain HTML.
 - **A hostname backstop for the script tag.** With the attribute, nudge only runs on localhost, 127.0.0.1, ::1, a `.localhost` or a `.local` host, and logs one console line elsewhere. The bookmarklet is unaffected.
 - The panel keeps itself on screen in narrow viewports, and nudge survives client-side route changes.
 

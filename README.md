@@ -28,39 +28,81 @@ nudge never writes to your files.
 
 Go to the [install page](https://g1d30nb.github.io/nudge/) and drag the link to your bookmarks bar. That is all.
 
+To use nudge inside Claude Code's built-in browser, or without clicking a bookmark, see [Putting nudge in your project](#putting-nudge-in-your-project) below.
+
 There is no clone, no server, no npm, and nothing is added to your project. The bookmark loads `nudge.js` from jsDelivr when you click it. If you would rather make the bookmark by hand, paste this line as its URL:
 
 ```
-javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.1.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
+javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
 ```
 
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.
 
-## In the page, for daily use
+## Putting nudge in your project
 
-The bookmark is the way to try nudge. If you use it every day on one project, you can put it in the project instead, so it is there on every page load without a bookmarks bar. That also makes it work in browsers that have no bookmarks bar, such as the browser pane inside Claude Code.
+The bookmark is how to try nudge. There are two reasons to go further and put nudge in the project itself.
 
-It is the same file and the same release, loaded a second way. Not a separate or experimental version.
+- **Claude Code's built-in browser has no bookmarks bar.** If you build with Claude Code and look at your work in its browser pane, there is nowhere to click a bookmark. With nudge in the project, the whole loop happens in one window: you drag in the pane, copy the batch, paste it into Claude Code beside it.
+- **Daily use.** If you use nudge on one project every day, it is there on every page load without a click.
 
-One script tag, nothing to download:
+It is the same file and the same release, loaded a second way. Nothing separate, nothing experimental.
 
-```html
+### What you get
+
+Instead of the panel, a small blue dot in the bottom left corner of every page while you are developing. Click the dot to open nudge; close the panel and the dot comes back. Your bookmark still works on the same page: it opens the panel if the dot is showing and closes it if the panel is open. Option-click the dot to hide it until the page reloads, for screenshots.
+
+### The easy way: ask Claude Code
+
+You do not need to know which file to edit or what your framework's development switch is called. Claude Code does. Copy the whole block below and paste it into Claude Code as one message, in the project you are building:
+
+```text
+Add nudge to this project so that it loads only while I am developing.
+
+nudge is a design-correction tool: https://github.com/g1d30nB/nudge. It is one script file. Add this tag to the layout or entry point that every page shares, so it is present when I run the dev server and absent from any production build:
+
 <script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js" data-nudge-dormant></script>
+
+Rules:
+- Keep the data-nudge-dormant attribute exactly as written. Without it nudge opens a panel on every page load.
+- Guard the tag with this framework's own development flag (for example import.meta.env.DEV, process.env.NODE_ENV === 'development', or import.meta.dev), so it cannot reach a production build. Do not rely on a runtime check instead.
+- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.2.0 into the public folder and point the tag at /nudge.js instead.
+- Change nothing else.
+- When you are done, start the dev server, tell me which file you changed, and remind me that the small blue dot in the bottom left corner of the page opens nudge.
 ```
 
-The `data-nudge-dormant` attribute matters. With it, nudge loads asleep: a small blue dot in the bottom left corner instead of the panel. Click the dot to open nudge; close the panel to go back to the dot. Option-click the dot to hide it until the page reloads, for screenshots. Without the attribute the panel opens on every page load, which is the bookmarklet's behaviour and not what you want in a project.
+Then open your dev server in Claude Code's browser pane, or in any browser. The dot is in the bottom left corner. If you do not see it, ask Claude Code to check that the tag it added is on the page.
 
-Add the tag to your dev layout only. Each snippet below uses the framework's own dev flag, so the tag cannot reach a production build. That guard is the real protection. As a backstop, with the attribute nudge refuses to run unless the hostname is `localhost`, `127.0.0.1`, `::1`, or ends in `.localhost` or `.local`, and logs one line in the console saying so. The bookmarklet skips that check; it is meant for live sites.
+### Why it cannot go live
 
-Each snippet was checked on a fresh project: the dev server renders the tag, and the production build does not contain it.
+Two safeguards, and either one on its own is enough.
 
-**Astro** (a layout or `src/pages/index.astro`, before `</body>`; `is:inline` stops Astro bundling it):
+1. **The tag only exists in development.** The prompt tells Claude Code to wrap the tag in your framework's own development switch. When your site is built for real, that switch is off and the tag is not in the output at all. This is the real protection. Every snippet further down was checked the same way: the dev server shows the tag, the production build does not contain it.
+2. **nudge refuses to run anywhere public.** Even if the tag somehow reached a live site, nudge checks the address it is running on. Loaded this way, it only works on `localhost`, `127.0.0.1`, `::1`, or an address ending in `.localhost` or `.local`, which are the addresses of a dev server on your own machine. Anywhere else it writes one line to the browser console and does nothing. Your bookmark is not subject to this check, because you use that on live sites on purpose.
+
+If you want to see for yourself: on your live site, view the page source and search for `nudge`. It will not be there.
+
+### To remove it
+
+Paste this into Claude Code: `Remove nudge from this project: delete the script tag and any code you added to load it.`
+
+### By hand, for each framework
+
+If you would rather add it yourself, each snippet below uses that framework's own development flag. Each was checked on a fresh project: the dev server renders the tag, and the production build does not contain it.
+
+<details>
+<summary>Astro</summary>
+
+In a layout, or `src/pages/index.astro`, before `</body>`. `is:inline` stops Astro bundling it.
 
 ```astro
 {import.meta.env.DEV && <script is:inline src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js" data-nudge-dormant></script>}
 ```
+</details>
 
-**Next.js, app router** (`app/layout.tsx`, inside `<body>` after `{children}`):
+<details>
+<summary>Next.js, app router</summary>
+
+In `app/layout.tsx`, inside `<body>` after `{children}`.
 
 ```tsx
 {process.env.NODE_ENV === 'development' && (
@@ -68,8 +110,12 @@ Each snippet was checked on a fresh project: the dev server renders the tag, and
   <script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js" data-nudge-dormant="" />
 )}
 ```
+</details>
 
-**Vite with React** (`src/main.jsx` or `main.tsx`; Vite's `index.html` has no conditionals, so add the tag from code and let the build drop it):
+<details>
+<summary>Vite with React</summary>
+
+In `src/main.jsx` or `main.tsx`. Vite's `index.html` has no conditionals, so add the tag from code and let the build drop it.
 
 ```js
 if (import.meta.env.DEV) {
@@ -79,8 +125,12 @@ if (import.meta.env.DEV) {
   document.body.appendChild(s)
 }
 ```
+</details>
 
-**SvelteKit** (`src/routes/+layout.svelte`, the same idea; a `{#if dev}` block in markup keeps the tag out of the page but leaves the URL as dead text in the client bundle, so add it from code instead):
+<details>
+<summary>SvelteKit</summary>
+
+In `src/routes/+layout.svelte`. A `{#if dev}` block in markup keeps the tag out of the page but leaves the URL as dead text in the client bundle, so add it from code instead.
 
 ```svelte
 <script lang="ts">
@@ -98,8 +148,12 @@ if (import.meta.env.DEV) {
 
 {@render children()}
 ```
+</details>
 
-**Nuxt** (`app/app.vue` or `app.vue`):
+<details>
+<summary>Nuxt</summary>
+
+In `app/app.vue` or `app.vue`.
 
 ```vue
 <script setup lang="ts">
@@ -108,20 +162,29 @@ if (import.meta.dev) {
 }
 </script>
 ```
+</details>
 
-**Plain HTML with no build step:** there is no build, so there is no guard. Put the tag before `</body>` and remove it before you deploy. The hostname backstop stops it running on a live domain, but do not rely on that; take the line out.
+<details>
+<summary>Plain HTML with no build step</summary>
+
+There is no build, so there is no development switch and no first safeguard. Put the tag before `</body>` and remove it before you deploy. The address check would stop nudge running on a live domain, but do not rely on it; take the line out.
 
 ```html
 <script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js" data-nudge-dormant></script>
 ```
+</details>
 
-**Self-hosting**, for projects whose Content-Security-Policy blocks outside scripts: download `nudge.js` from the [release](https://github.com/g1d30nB/nudge/releases), put it in the project's public folder, and point the tag at `/nudge.js`. Same file, same guard, same attribute.
+<details>
+<summary>Self-hosting, for projects that block outside scripts</summary>
+
+Download `nudge.js` from the [release](https://github.com/g1d30nB/nudge/releases/tag/v1.2.0), put it in the project's public folder, and point the tag at `/nudge.js`. Same file, same guard, same attribute.
 
 ```html
 <script src="/nudge.js" data-nudge-dormant></script>
 ```
+</details>
 
-If the bookmark is clicked on a page that already has nudge loaded this way, it opens the panel if the dot is showing and closes it if the panel is open. Loading the file twice does nothing.
+Whichever way it is added, the `data-nudge-dormant` attribute is what makes nudge load as a dot rather than a panel, and what turns on the address check. Loading the file twice does nothing.
 
 ## Use it
 
