@@ -85,14 +85,13 @@ Runs `node --check nudge.js` then the Playwright suite. 30/30 as of 15 Sep 2026,
 - Resize snapping (`fitSize`): the moving edge snaps to candidate edges, the size snaps to candidate sizes, nearer correction wins, the other survives only if it still holds at 1px. Match box is drawn from the matched element's live rect because a resize can reflow the page. Candidates are recollected on release for the same reason.
 - Aspect lock on resize: Option, Command or Control. Control was the requested key but is the macOS secondary click, so it may never arrive as a drag; Option is the documented one and `contextmenu` is suppressed while active to give Control a chance. Ratio is taken at drag start, not from the original, so locking after a distortion keeps the current shape. On the corner the larger movement drives.
 - Replaced elements (`IMG|VIDEO|CANVAS|IFRAME|SVG|PICTURE`) get a distortion line in the batch when resized off their ratio. Found on a real Astro site: a logo strip exported as one PNG with an inline height, so an unmodified width drag described a stretched image to the agent.
-- Selection is the deepest element under the pointer. No select-parent key in v1; click a `figure`'s padding to get the figure rather than its image.
+- Selection is the deepest element under the pointer. Option+ArrowUp selects the parent (never body or html) and Option+ArrowDown retraces; a fresh click clears the path. Inside a selection, a mouse-down primes a move but nothing is recorded until the pointer has moved 3px; a release before that selects the element under the pointer. So a click selects and a drag moves, and descendants of a selected element can be selected without pressing Escape first.
 
 ## Known gaps
 
 - A hot reload that rebuilds an element drops its preview (a CSS-only reload keeps it, and the panel warns). Could persist a report draft to sessionStorage.
 - Reload detection is a heuristic. A dev server that injects CSS by appending new `<style>` elements without removing old ones would not trigger the warning.
 - No multi-select.
-- No select-parent gesture; a padded wrapper can only be selected by clicking its padding.
 - Resize handles are E, S and SE only. W and N handles imply a move as well as a resize, so the batch would need to describe both.
 - Batch resolution on non-Astro stacks is unverified. Without source attributes the agent gets a selector path and a text snippet; whether that is precise enough to find the right file has only been tested on Astro.
 - Control as the aspect-lock key is unverified in a real macOS browser; Playwright's synthetic events cannot reproduce the OS-level Control-click to right-click conversion. Option is known good.

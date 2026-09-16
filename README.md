@@ -191,7 +191,7 @@ Whichever way it is added, the `data-nudge-dormant` attribute is what makes nudg
 ## Use it
 
 - Click the bookmark to open nudge. Click it again to close it.
-- Click an element to select it. Clicks select the deepest element under the pointer, so clicking an image selects the `img`, not its `figure`.
+- Click an element to select it. Clicks select the deepest element under the pointer, so clicking an image selects the `img`, not its `figure`. Hold Option and press the up arrow to select the parent instead, and again for its parent; Option and the down arrow comes back. Clicking inside a selected element selects what you clicked; dragging moves the selected element.
 - Drag inside the selection to move it. Pink guides appear when an edge lines up with another element; release on a guide and the relationship is recorded.
 - Drag the right, bottom or corner handle to resize. The moving edge snaps to other elements' edges, and the width or height snaps when it matches another element's; a dashed box appears over the element you now match.
 - Hold **Option** while resizing to lock the aspect ratio, so the element scales instead of stretching. On the corner handle, whichever direction you move further drives the size and the other follows.
@@ -269,7 +269,6 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 - A native `<dialog>` opened with `showModal()`, or a popover, sits in the browser's top layer and covers nudge's panel and dot. Close it first.
 - In dormant mode, an element a framework re-renders without a route change keeps its record until you clear the preview; only route changes drop records for removed elements.
 - No multi-select.
-- No gesture to select an element's parent.
 - Pages with a Content-Security-Policy that blocks external scripts refuse the loader, and the bookmark does nothing.
 
 ## Where it is going
