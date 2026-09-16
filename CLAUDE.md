@@ -8,6 +8,7 @@ Public repo: https://github.com/g1d30nB/nudge (MIT). Install page: https://g1d30
 
 - `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr pinned to a release tag (`cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js`); the development bookmarklet, used while building, loads it from 127.0.0.1:7357.
 - `bookmarklet.txt`: both loaders, labelled.
+- `docs/nudge-in-claude-code.gif`: the second README demo, nudge as a dot inside Claude Code's built-in browser (800px, 6fps, 64 colours, about 6.5MB; the 12MB original is on Gideon's Desktop).
 - `docs/nudge-demo.gif`: the README demo. Recorded on a throwaway wireframe page that is not in the repo (kept locally in `demo/`, gitignored). Keep it under about 5MB.
 - `docs/index.html`: install page with the draggable `javascript:` link and the paste-into-Claude-Code prompt for the in-project install, served by GitHub Pages. GitHub strips `javascript:` links from rendered READMEs, which is why this page exists.
 - `LICENSE`: MIT.
@@ -69,6 +70,7 @@ Runs `node --check nudge.js` then the Playwright suite. 30/30 as of 15 Sep 2026,
 - Route changes: `history.pushState` and `replaceState` are wrapped and `popstate` observed; each triggers `reconcile`, which drops records whose elements have left the document, clears a detached selection, re-observes a replaced `<head>`, and re-appends nudge's nodes if a framework removed them from `<html>` (a childList observer on `<html>` does this too). Records on elements a framework re-renders without a route change are not dropped; that path is untested.
 - Mount waits for `DOMContentLoaded` when there is no `<body>` yet, so a script tag in `<head>` works. `window.__nudge` is defined immediately regardless.
 - Panel width is `min(360px, calc(100vw - 32px))` so it stays on screen in narrow panes. The width itself in narrow viewports is an open issue.
+- The panel collapses on a header click to its header and buttons, with a change-count badge. Only the user toggles it; nothing collapses or expands the panel on its own. Collapsed state persists across sleep and wake within a page load. The reload warning stays visible when collapsed.
 - The panel is anchored to the bottom, so any element appearing inside it moves everything above it upward. Anything that toggles near a control the pointer may be on (the type match line) must reserve its space and toggle `visibility`, not `display`.
 - Copy serialises final state only, not history. One line per touched element.
 - Snap detection runs during drag (guides) and again on release with 1px tolerance to record relationships. Relationships are the point: "bottom aligned with X" beats "moved 412px".

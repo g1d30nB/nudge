@@ -83,6 +83,8 @@ All pass/fail. No subjective checks.
 | 58 | Option-click hides the dot | Hidden until reload; the bookmarklet still opens the panel; closing keeps it hidden; `page.reload()` brings it back |
 | 59 | Route change | After `pushState` and a body swap: records on removed elements are dropped, selection cleared, panel still open, a new element selectable. Removing nudge's nodes from `<html>` brings them back. `history.back()` leaves one dot |
 | 60 | Reload warning from the dot | A panel opened from the dot still shows the stylesheet-reload warning after Copy; closing reverts |
+| 61 | Collapse | Clicking the header hides the list, the property controls and the hint, keeps the buttons, shows a badge with the change count, and halves the panel height (under 110px). Changes made while collapsed keep it collapsed and update the badge; selecting a text element does not reveal the controls; Copy and the reload warning still work. Clicking again restores everything and hides the badge |
+| 62 | Collapse and close | The × closes without toggling collapse; a dormant instance reopened from the dot is still collapsed |
 
 ## Test Plan
 
@@ -173,6 +175,10 @@ First run: one failure, a test arithmetic mistake (−0.12 / 32 rounds to −0.0
 A second way to load the same file: a script tag carrying `data-nudge-dormant`. The attribute is the only signal that distinguishes the script-tag path from the bookmarklet, because the bookmarklet also injects a script element. With it, nudge mounts asleep as a dot and refuses to run off a local host; without it, behaviour is unchanged and the guard is skipped. `wake()` attaches the page listeners and shows the panel; `sleep()` reverts previews, detaches the listeners and shows the dot, so an asleep page behaves as if nudge were absent. Closing a dormant panel sleeps; closing a bookmarklet panel destroys, as before. A bookmarklet click on a dormant page toggles wake and sleep. Loading the file twice is a no-op.
 
 First run: one failure, real. The bookmarklet path was creating the dot and hiding it; the spec says no dot on that path. No existing test changed. 60/60, stable over `--repeat-each 3`.
+
+## Collapsible panel (16 Sep 2026, branch feat/collapse, checks 61–62)
+
+After three changes in Claude Code's 964px pane the panel covered much of the section being edited. Clicking the header now folds the panel to its header and button row; a badge on the header carries the change count. It stays collapsed while working, so a selection does not reopen it, and the state survives sleep and wake. Deliberately not automatic: a panel that resizes when the pointer leaves it moves under the user, which is what broke the steppers. 62/62 first run, stable over `--repeat-each 3`.
 
 ## Expected first failures
 

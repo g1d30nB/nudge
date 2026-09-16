@@ -49,6 +49,8 @@ It is the same file and the same release, loaded a second way. Nothing separate,
 
 ### What you get
 
+![nudge as a dot inside Claude Code's built-in browser, with batches pasted into Claude Code beside it](docs/nudge-in-claude-code.gif)
+
 Instead of the panel, a small blue dot in the bottom left corner of every page while you are developing. Click the dot to open nudge; close the panel and the dot comes back. Your bookmark still works on the same page: it opens the panel if the dot is showing and closes it if the panel is open. Option-click the dot to hide it until the page reloads, for screenshots.
 
 ### The easy way: ask Claude Code
@@ -198,6 +200,7 @@ Whichever way it is added, the `data-nudge-dormant` attribute is what makes nudg
 - With a text element selected, the panel shows its font size, line height, letter spacing and weight. Step them with the arrow keys or the small arrows that appear in each box: 1 at a time, 10 with Shift, a fine step with Option. A value that lands on another element's value snaps to it, and the batch says so: `font size 17px → 21px (now matches .lede)`.
 - The panel also shows the element's text colour, and its background colour where it already has one. Click either to open a palette built from the colour tokens declared on `:root`, with the current token marked. The batch reports token names, such as `colour var(--ink-muted) → var(--ink)`. The colour picker under the palette is for anything else, and the batch then says no token matched that value.
 - Hold Shift while dragging to disable snapping. Release with Shift held and no alignment is recorded; the move is taken as exact.
+- Click the panel's header to collapse it to a single row while you work; the row shows how many changes you have made and keeps the Copy button. Click it again to see the list and the type and colour controls.
 - Changes stay on the page as a preview. Each change has its own undo, and Reset clears them all.
 - **Copy for Claude Code** puts the batch on the clipboard and marks those changes as sent: their rows dim and show a tick. The preview stays on the page, so if the paste does not take you can press **Re-copy**. Paste the batch into your agent as the whole message.
 - Once your agent has applied the batch, press **Clear preview**. It removes nudge's preview so you see the page as your code now renders it.
