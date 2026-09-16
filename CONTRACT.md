@@ -74,6 +74,15 @@ All pass/fail. No subjective checks.
 | 49 | Type steppers | Stepper arrows are hidden at rest and appear on hover or focus. Clicking up four times from 17px snaps through 20px to 21px with the match line; Shift-click +10; Alt-click −0.1. Clicking a stepper keeps focus in a focused field and ArrowUp still steps. Holding a stepper repeats. The element never moves |
 | 50 | Max-width note only when capped | Resizing an element 300px wide with `max-width: 800px` reports `width 300px → 400px` with no cap note. Resizing an element held at 300px by `max-width: 50%` reports `width 300px → 400px (was capped by max-width: 50%)`. Undo leaves `style.cssText` empty, so the measurement leaves no trace |
 | 51 | Unit equivalents | An element with `font-size: 2rem; letter-spacing: -0.035em` shows 32 and −1.12. Stepping letter spacing reports `letter spacing -1.12px → -0.12px` then `as em of the font size: -0.035em → -0.0038em`. Stepping font size reports `font size 32px → 33px` immediately followed by `as rem at a 16px root: 2rem → 2.0625rem`, and the em line is recomputed against 33px |
+| 52 | Dormant load | Fixture on `http://localhost:4173` with `<script src data-nudge-dormant>` at the end of body → mode `dormant`, not awake, panel hidden, a 10px dot at left 14 / bottom 14 titled "nudge"; a link click navigates. Clicking the dot → awake, panel visible, dot hidden, a resize reports normally. Close → asleep, preview reverted, dot back, links navigate again |
+| 53 | Bookmarklet on a dormant page | A bookmarklet-style load (no attribute) wakes it; a second one sleeps it, dot still present, `window.__nudge` still defined. Loading the dormant script a second time leaves one dot and no state change |
+| 54 | Hostname guard | The dormant tag on `https://nudge.test` mounts nothing, defines no `window.__nudge`, logs exactly one `console.warn` naming the host. The bookmarklet path on the same host mounts as before with no dot. `http://app.local` and `http://127.0.0.1:4173` both mount the dot |
+| 55 | Script in head | The dormant tag placed in `<head>` (no body yet) → a dot after load, panel opens from it |
+| 56 | Stacking | With a page overlay at z-index 2147483647 shown, `elementFromPoint` at the dot's centre is the dot and at the Copy button's centre is the button. A transform and filter on `<body>` leave the dot at left 14 / bottom 14 |
+| 57 | Narrow viewport | At 380×700 the dot is on screen and the opened panel's rect lies within the viewport |
+| 58 | Option-click hides the dot | Hidden until reload; the bookmarklet still opens the panel; closing keeps it hidden; `page.reload()` brings it back |
+| 59 | Route change | After `pushState` and a body swap: records on removed elements are dropped, selection cleared, panel still open, a new element selectable. Removing nudge's nodes from `<html>` brings them back. `history.back()` leaves one dot |
+| 60 | Reload warning from the dot | A panel opened from the dot still shows the stylesheet-reload warning after Copy; closing reverts |
 
 ## Test Plan
 
@@ -158,6 +167,12 @@ First run failed on a real bug: when a step landed on a match, the match line ap
 Two errors carried into v1.1.0. The max-width note was printed whenever an element had any max-width; the record now lifts the max-width for one synchronous measurement and keeps the note only if the element would otherwise be wider, which covers px, %, calc() and clamp(). Type values were printed only as computed pixels; font size now adds its rem equivalent at the page's real root size and letter spacing its em equivalent, on separate lines so existing batch lines are unchanged. Checked against hubiq.co.uk, whose source sets `.h-hero{letter-spacing:-.035em}`: the batch now reports `-0.035em`.
 
 First run: one failure, a test arithmetic mistake (−0.12 / 32 rounds to −0.0038 in floating point). No existing test changed. 51/51, stable over `--repeat-each 3`.
+
+## Dormant mode (16 Sep 2026, branch feat/dormant, checks 52–60, v1.2.0 candidate)
+
+A second way to load the same file: a script tag carrying `data-nudge-dormant`. The attribute is the only signal that distinguishes the script-tag path from the bookmarklet, because the bookmarklet also injects a script element. With it, nudge mounts asleep as a dot and refuses to run off a local host; without it, behaviour is unchanged and the guard is skipped. `wake()` attaches the page listeners and shows the panel; `sleep()` reverts previews, detaches the listeners and shows the dot, so an asleep page behaves as if nudge were absent. Closing a dormant panel sleeps; closing a bookmarklet panel destroys, as before. A bookmarklet click on a dormant page toggles wake and sleep. Loading the file twice is a no-op.
+
+First run: one failure, real. The bookmarklet path was creating the dot and hiding it; the spec says no dot on that path. No existing test changed. 60/60, stable over `--repeat-each 3`.
 
 ## Expected first failures
 

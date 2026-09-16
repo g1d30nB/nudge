@@ -1,9 +1,11 @@
 /*
   nudge: drag on the running page, hand the intent to Claude Code.
 
-  Loads as a bookmarklet on any localhost dev server. Nothing here writes to
-  source; it captures what you did (resize, move, remove), detects what the
-  moved thing lined up with, and copies a batch of measurements for the agent.
+  Loads as a bookmarklet on any page, or from a script tag carrying
+  data-nudge-dormant, which loads it asleep as a small dot on local hosts only.
+  Nothing here writes to source; it captures what you did (resize, move,
+  remove), detects what the moved thing lined up with, and copies a batch of
+  measurements for the agent.
 
   Keys: click = select · drag inside selection = move · E/S/SE handles = resize
         arrows = nudge 1px (shift = 10px) · ⌫ = remove · esc = deselect
@@ -12,11 +14,29 @@
 (function () {
   'use strict';
 
-  if (window.__nudge) { window.__nudge.destroy(); return; }
+  // The mode comes from the script element that loaded this file. `data-nudge-dormant` is the script-tag
+  // path: load asleep as a dot, and only on a local host. No attribute is the bookmarklet path, unchanged.
+  const ownScript = document.currentScript;
+  const DORMANT = !!(ownScript && ownScript.hasAttribute && ownScript.hasAttribute('data-nudge-dormant'));
+
+  if (window.__nudge) {
+    // Loaded twice: the first instance stands. A bookmarklet click on a dormant page toggles the panel.
+    if (!DORMANT) window.__nudge.toggle();
+    return;
+  }
+
+  const isLocalHost = (h) => /^(localhost|127\.0\.0\.1|::1|\[::1\])$/i.test(h) || /\.(localhost|local)$/i.test(h);
+  if (DORMANT && !isLocalHost(location.hostname)) {
+    console.warn(`nudge: not running on "${location.hostname}". The script tag runs only on localhost, 127.0.0.1, ::1, a .localhost or a .local host. Use the bookmarklet on a live site.`);
+    return;
+  }
 
   const SNAP = 5;           // px tolerance while dragging
   const RELATE = 1;         // px tolerance when recording relationships
-  const Z = 2147483000;
+  // Highest possible z-index for the panel and dot, so a page's own maximum only ties, and ties go to the
+  // later node in the document: nudge's nodes are the last children of <html>. The top layer (a native
+  // <dialog> shown modally, or a popover) still paints above everything and cannot be beaten.
+  const Z = 2147483646;
 
   const state = {
     selected: null,
@@ -31,6 +51,8 @@
     typeCands: null,        // other text elements' type values, collected once per selection
     tokens: null,           // colour tokens read from :root, once per selection
     palette: null,          // which colour property's palette is open: 'color' | 'backgroundColor'
+    awake: false,           // panel open and page listeners attached
+    dotHidden: false,       // Option-click on the dot hides it until the page reloads
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -629,7 +651,7 @@
 
   const panel = document.createElement('div');
   panel.setAttribute('data-nudge', '');
-  panel.style.cssText = `position:fixed;right:16px;bottom:16px;width:360px;max-height:60vh;display:flex;flex-direction:column;
+  panel.style.cssText = `position:fixed;right:16px;bottom:16px;width:min(360px,calc(100vw - 32px));max-height:60vh;display:flex;flex-direction:column;
     background:#1c1b19;color:#ece7df;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);z-index:${Z + 1};
     font:12px/1.45 -apple-system,system-ui,sans-serif;overflow:hidden;`;
   panel.innerHTML = `
@@ -1189,52 +1211,124 @@
     render(); updateBoxes();
   });
 
-  /* ────────────────────────── mount / destroy ────────────────────────── */
+  /* ────────────────────────── dot ────────────────────────── */
 
-  const opts = { capture: true };
-  document.addEventListener('mousemove', onMove, opts);
-  document.addEventListener('mousedown', onDown, opts);
-  document.addEventListener('mouseup', onUp, opts);
-  document.addEventListener('click', onClick, opts);
-  document.addEventListener('keydown', onKey, opts);
-  document.addEventListener('contextmenu', onContext, opts);
-  document.addEventListener('dblclick', onDblClick, opts);
-  document.addEventListener('beforeinput', onBeforeInput, opts);
-  document.addEventListener('paste', onPaste, opts);
-  document.addEventListener('drop', onDrop, opts);
-  window.addEventListener('scroll', onScroll, true);
-  window.addEventListener('resize', onScroll);
+  // The launcher for dormant mode. Bottom left, away from the panel and from the chat widgets and cookie
+  // banners that cluster bottom right. A white ring and a dark halo keep it visible on light and dark pages.
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.setAttribute('data-nudge', ''); dot.setAttribute('data-nudge-dot', '');
+  dot.title = 'nudge'; dot.setAttribute('aria-label', 'Open nudge');
+  dot.style.cssText = `position:fixed;left:14px;bottom:14px;width:10px;height:10px;padding:0;margin:0;border:0;border-radius:50%;
+    background:#2f6fed;box-shadow:0 0 0 2px #fff,0 0 0 3px rgba(0,0,0,.4);opacity:.5;cursor:pointer;z-index:${Z + 1};
+    transition:${matchMedia('(prefers-reduced-motion: reduce)').matches ? 'none' : 'opacity .15s'};`;
+  const dotOpacity = () => { dot.style.opacity = (dot.matches(':hover') || dot.matches(':focus-visible')) ? '1' : '.5'; };
+  ['mouseenter', 'mouseleave', 'focus', 'blur'].forEach((ev) => dot.addEventListener(ev, dotOpacity));
+  dot.addEventListener('click', (e) => {
+    if (e.altKey) { state.dotHidden = true; dot.hidden = true; return; }   // Option-click: gone until reload, for screenshots
+    wake();
+  });
 
-  document.documentElement.appendChild(overlay);
-  document.documentElement.appendChild(panel);
-  if (document.head) headObserver.observe(document.head, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'media', 'disabled'] });
-  $('nudge-copy').addEventListener('click', primary);
-  $('nudge-recopy').addEventListener('click', recopy);
-  $('nudge-reset').addEventListener('click', resetAll);
-  $('nudge-close').addEventListener('click', () => window.__nudge.destroy());
-  TYPE.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });
-  render();
+  /* ────────────────────────── mount / wake / sleep ────────────────────────── */
+
+  const pageListeners = [
+    [document, 'mousemove', onMove], [document, 'mousedown', onDown], [document, 'mouseup', onUp],
+    [document, 'click', onClick], [document, 'keydown', onKey], [document, 'contextmenu', onContext],
+    [document, 'dblclick', onDblClick], [document, 'beforeinput', onBeforeInput], [document, 'paste', onPaste],
+    [document, 'drop', onDrop], [window, 'scroll', onScroll], [window, 'resize', onScroll],
+  ];
+
+  let headTarget = null;
+  function observeHead() {
+    headObserver.disconnect();
+    headTarget = document.head;
+    if (headTarget) headObserver.observe(headTarget, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'media', 'disabled'] });
+  }
+
+  function wake() {
+    if (state.awake) return;
+    state.awake = true;
+    pageListeners.forEach(([t, ev, fn]) => t.addEventListener(ev, fn, true));
+    observeHead();
+    overlay.style.display = ''; panel.style.display = 'flex';
+    dot.hidden = true;
+    render(); updateBoxes(); renderProps();
+  }
+
+  // Sleeping discards previews, as closing does, so nothing invisible is left masking the real page.
+  function sleep() {
+    if (!state.awake) return;
+    resetAll();
+    pageListeners.forEach(([t, ev, fn]) => t.removeEventListener(ev, fn, true));
+    headObserver.disconnect(); headTarget = null;
+    state.awake = false;
+    hoverBox.style.display = 'none'; showGuides(null);
+    overlay.style.display = 'none'; panel.style.display = 'none';
+    dot.hidden = state.dotHidden;
+  }
+
+  const close = () => (DORMANT ? sleep() : destroy());
+  const toggle = () => (DORMANT ? (state.awake ? sleep() : wake()) : destroy());
+
+  // A single-page app changes the page without reloading it. Keep nudge's nodes on <html>, re-observe a
+  // replaced <head>, and drop records and the selection when their elements have left the document.
+  const rootObserver = new MutationObserver(() => keepMounted());
+  function keepMounted() {
+    const root = document.documentElement;
+    (DORMANT ? [overlay, panel, dot] : [overlay, panel]).forEach((n) => { if (n.parentNode !== root) root.appendChild(n); });
+    if (state.awake && document.head !== headTarget) observeHead();
+  }
+  function reconcile() {
+    keepMounted();
+    let dropped = false;
+    allRecs().forEach((r) => { if (!document.contains(r.el)) { state.changes.delete(r.el); dropped = true; } });
+    if (state.editing && !document.contains(state.editing.el)) exitEditMode();
+    if (state.selected && !document.contains(state.selected)) select(null);
+    if (dropped) render();
+    updateBoxes();
+  }
+  const afterNav = () => { setTimeout(reconcile, 0); setTimeout(reconcile, 300); };   // frameworks render after the URL changes
+  const origPush = history.pushState, origReplace = history.replaceState;
+  function hookHistory() {
+    history.pushState = function () { const r = origPush.apply(this, arguments); afterNav(); return r; };
+    history.replaceState = function () { const r = origReplace.apply(this, arguments); afterNav(); return r; };
+    window.addEventListener('popstate', afterNav);
+  }
+  function unhookHistory() {
+    if (history.pushState !== origPush) history.pushState = origPush;
+    if (history.replaceState !== origReplace) history.replaceState = origReplace;
+    window.removeEventListener('popstate', afterNav);
+  }
+
+  function mount() {
+    if (panel.parentNode) return;
+    const root = document.documentElement;
+    root.appendChild(overlay); root.appendChild(panel);
+    if (DORMANT) root.appendChild(dot);   // the bookmarklet path has no dot at all
+    $('nudge-copy').addEventListener('click', primary);
+    $('nudge-recopy').addEventListener('click', recopy);
+    $('nudge-reset').addEventListener('click', resetAll);
+    $('nudge-close').addEventListener('click', close);
+    TYPE.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });
+    rootObserver.observe(root, { childList: true });
+    hookHistory();
+    overlay.style.display = 'none'; panel.style.display = 'none';
+    if (DORMANT) render(); else wake();
+  }
+
+  function destroy() {
+    if (state.awake) { resetAll(); pageListeners.forEach(([t, ev, fn]) => t.removeEventListener(ev, fn, true)); }
+    state.awake = false;
+    headObserver.disconnect(); rootObserver.disconnect(); unhookHistory();
+    overlay.remove(); panel.remove(); dot.remove();
+    delete window.__nudge;
+  }
+
+  // A script tag in <head> runs before <body> exists; nothing here needs the body until then.
+  if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount, { once: true });
 
   window.__nudge = {
-    destroy() {
-      resetAll();
-      headObserver.disconnect();
-      document.removeEventListener('mousemove', onMove, opts);
-      document.removeEventListener('mousedown', onDown, opts);
-      document.removeEventListener('mouseup', onUp, opts);
-      document.removeEventListener('click', onClick, opts);
-      document.removeEventListener('keydown', onKey, opts);
-      document.removeEventListener('contextmenu', onContext, opts);
-      document.removeEventListener('dblclick', onDblClick, opts);
-      document.removeEventListener('beforeinput', onBeforeInput, opts);
-      document.removeEventListener('paste', onPaste, opts);
-      document.removeEventListener('drop', onDrop, opts);
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', onScroll);
-      overlay.remove(); panel.remove();
-      delete window.__nudge;
-    },
-    report,
+    destroy, wake, sleep, toggle, close, report,
     // Test hook. Read-only view of internal state; no behavioural effect.
     _state: {
       get selected() { return state.selected; },
@@ -1244,7 +1338,9 @@
       get batch() { return state.batch; },
       get reloadSeq() { return state.reloadSeq; },
       get editing() { return state.editing && state.editing.el; },
-      els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles },
+      get awake() { return state.awake; },
+      get mode() { return DORMANT ? 'dormant' : 'bookmarklet'; },
+      els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot },
     },
   };
 })();
