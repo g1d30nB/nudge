@@ -6,6 +6,8 @@ Installed bookmarks are pinned to a release. To get a new release, reinstall the
 
 ### Added
 
+- **Select the parent.** Option and the up arrow selects the parent of the selected element; Option and the down arrow comes back. This reaches wrappers whose surface is entirely their children.
+- **Click selects, drag moves.** Clicking inside a selected element now selects what you clicked; only a drag moves the selection. Before, nothing inside a selected element could be selected without pressing Escape first.
 - **Collapse the panel.** Click its header to fold it to a single row with the change count and the Copy button, so the page stays visible while you work. Click again to expand.
 
 ## v1.2.0, 16 September 2026

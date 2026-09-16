@@ -590,9 +590,10 @@ test('27 editing a sent element starts a fresh record from the live page', async
   expect((await changes(page))[0].dy).toBe(40);
   await copyAndSettle(page);
 
-  // A click without movement leaves the sent preview alone.
+  // A click without movement leaves the sent preview alone. (On the figure's padding: since v1.2.1 a click
+  // inside the selection selects the element under the pointer, and the centre is the img.)
   f = await rect(page, FIG);
-  await page.mouse.move(f.cx, f.cy); await page.mouse.down(); await page.mouse.up();
+  await page.mouse.move(f.left + 3, f.top + 3); await page.mouse.down(); await page.mouse.up();
   expect((await changes(page))[0]).toMatchObject({ dy: 40 });
   expect(await page.evaluate(() => window.__nudge._state.changes[0].sent)).toBe(true);
 
@@ -1327,4 +1328,58 @@ test('62 the close button does not toggle collapse, and the collapsed state surv
   await expect(page.locator('#nudge-list')).toBeHidden();
   await page.locator('#nudge-head').click();
   expect(await collapsed(page)).toBe(false);
+});
+
+/* ───────────── click selects, drag moves; select the parent (checks 63–64) ───────────── */
+
+test('63 inside a selection, a click selects what was clicked and only a drag moves', async ({ page }) => {
+  await scrollWorkIntoView(page);
+  await inject(page);
+  await select(page, TARGET);
+  await page.keyboard.press('Alt+ArrowUp');
+  await page.keyboard.press('Alt+ArrowUp');
+  expect(await selectedIs(page, '#work')).toBe(true);
+  // A click on a paragraph inside the selected section selects the paragraph and records nothing.
+  const p = await rect(page, TARGET);
+  await page.mouse.click(p.cx, p.cy);
+  expect(await selectedIs(page, TARGET)).toBe(true);
+  expect(await changes(page)).toHaveLength(0);
+  // A 2px wobble is still a click.
+  await page.keyboard.press('Alt+ArrowUp'); await page.keyboard.press('Alt+ArrowUp');
+  expect(await selectedIs(page, '#work')).toBe(true);
+  await page.mouse.move(p.cx, p.cy); await page.mouse.down(); await page.mouse.move(p.cx + 2, p.cy + 1); await page.mouse.up();
+  expect(await selectedIs(page, TARGET)).toBe(true);
+  expect(await changes(page)).toHaveLength(0);
+  // A real drag from the same spot moves the selected section, not the paragraph.
+  await page.keyboard.press('Alt+ArrowUp'); await page.keyboard.press('Alt+ArrowUp');
+  await drag(page, [p.cx, p.cy], [p.cx, p.cy + 30], { shift: true });
+  expect(await changes(page)).toEqual([expect.objectContaining({ test: 'work', dy: 30 })]);
+  expect(await selectedIs(page, '#work')).toBe(true);
+});
+
+test('64 Option+ArrowUp selects the parent, Option+ArrowDown comes back down, never body', async ({ page }) => {
+  await scrollWorkIntoView(page);
+  await inject(page);
+  await select(page, TARGET);
+  await page.keyboard.press('Alt+ArrowUp');
+  expect(await page.evaluate(() => window.__nudge._state.selected.className)).toBe('case-block');
+  await expect(page.locator('#nudge-status')).toHaveText('section#work > div.case-block');
+  await page.keyboard.press('Alt+ArrowUp');
+  expect(await selectedIs(page, '#work')).toBe(true);
+  await page.keyboard.press('Alt+ArrowUp');                       // parent is body: stays put
+  expect(await selectedIs(page, '#work')).toBe(true);
+  await expect(page.locator('#nudge-status')).toContainText('already at the top');
+  await page.keyboard.press('Alt+ArrowDown');
+  expect(await page.evaluate(() => window.__nudge._state.selected.className)).toBe('case-block');
+  await page.keyboard.press('Alt+ArrowDown');
+  expect(await selectedIs(page, TARGET)).toBe(true);
+  await page.keyboard.press('Alt+ArrowDown');                     // nothing below the start
+  expect(await selectedIs(page, TARGET)).toBe(true);
+  // A plain arrow still nudges, and a fresh click resets the path.
+  await page.keyboard.press('ArrowDown');
+  expect((await changes(page))[0]).toMatchObject({ test: 'target', dy: 1 });
+  await page.keyboard.press('Alt+ArrowUp');
+  await select(page, TAGLINE);
+  await page.keyboard.press('Alt+ArrowDown');
+  expect(await selectedIs(page, TAGLINE)).toBe(true);
 });

@@ -54,6 +54,7 @@
     awake: false,           // panel open and page listeners attached
     dotHidden: false,       // Option-click on the dot hides it until the page reloads
     collapsed: false,       // panel folded to its header and buttons, so the page stays visible while working
+    climbed: [],            // elements passed on the way up with Option+ArrowUp, so Option+ArrowDown can return
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -682,7 +683,7 @@
       <button data-nudge id="nudge-recopy" style="display:none;background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Re-copy</button>
       <button data-nudge id="nudge-reset" style="background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Reset</button>
     </div>
-    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · shift disables snap · esc deselect</div>`;
+    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · ⌥↑ parent · shift disables snap · esc deselect</div>`;
 
   const $ = (id) => panel.querySelector('#' + id);
   const setStatus = (t) => { $('nudge-status').textContent = t; };
@@ -1029,8 +1030,9 @@
 
   /* ────────────────────────── selection ────────────────────────── */
 
-  function select(el) {
+  function select(el, keepClimb) {
     if (el !== state.selected) { state.typeCands = null; state.tokens = null; state.palette = null; matchBox.style.display = 'none'; }
+    if (!keepClimb) state.climbed = [];
     state.selected = el;
     updateBoxes();
     renderProps();
@@ -1064,7 +1066,7 @@
     if (ae && isTool(ae) && ae !== document.body && ae.blur) ae.blur();
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (!el || el === document.body || el === document.documentElement) { select(null); return; }
-    if (state.selected && (el === state.selected || state.selected.contains(el))) { startMoveDrag(e); return; }
+    if (state.selected && (el === state.selected || state.selected.contains(el))) { startMoveDrag(e, el); return; }
     select(el);
   }
 
@@ -1084,19 +1086,22 @@
     d.el = state.selected; d.startX = e.clientX; d.startY = e.clientY; d.r = null;
     state.notice = null;
     const existing = state.changes.get(d.el);
-    // A click on a sent element must not clear its preview, so wait for real movement before re-recording it.
-    if (!(existing && existing.sent)) prime(d);
+    // A move waits for real movement: a click that does not move selects what was clicked instead (see onUp).
+    // A click on a sent element must not clear its preview either, so that also waits.
+    if (d.kind !== 'move' && !(existing && existing.sent)) prime(d);
     state.drag = d;
     document.body.style.userSelect = 'none';
   }
 
-  function startMoveDrag(e) { startDrag(e, { kind: 'move' }); }
+  // The element under the pointer is remembered so a click inside the selection can select it.
+  function startMoveDrag(e, target) { startDrag(e, { kind: 'move', target }); }
   function startResize(e, handle) { startDrag(e, { kind: 'resize', handle }); }
 
   function dragMove(e) {
     const d = state.drag;
     if (!d.r) {
-      if (e.clientX === d.startX && e.clientY === d.startY) return;
+      // Under 3px is a click, not a drag: it should not become a 1px move.
+      if (Math.abs(e.clientX - d.startX) < 3 && Math.abs(e.clientY - d.startY) < 3) return;
       prime(d);
     }
     const r = d.r;
@@ -1151,11 +1156,12 @@
 
   function onUp() {
     if (!state.drag) return;
-    const { r, shift } = state.drag;
+    const { r, shift, kind, target } = state.drag;
     state.drag = null;
     document.body.style.userSelect = '';
     showGuides(null);
     if (r) finish(r, shift);
+    else if (kind === 'move' && target && target !== state.selected) select(target);   // a click, not a drag
   }
 
   function finish(r, exact) {
@@ -1185,6 +1191,21 @@
       const r = rec(state.selected); r.removed = true; apply(r);
       finish(r); select(null);
       if (state.notice) setStatus(state.notice);
+      return;
+    }
+    // Option+ArrowUp climbs to the parent, which is the only way to reach a wrapper whose surface is all children.
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      const cur = state.selected;
+      if (e.key === 'ArrowUp') {
+        const parent = cur.parentElement;
+        if (!parent || parent === document.body || parent === document.documentElement) { setStatus(`${descriptor(cur)} · already at the top`); return; }
+        state.climbed.push(cur); select(parent, true);
+      } else {
+        const child = state.climbed.pop();
+        if (!child || child.parentElement !== cur) { state.climbed = []; setStatus(`${descriptor(cur)} · nothing to go back down to`); return; }
+        select(child, true);
+      }
       return;
     }
     const step = e.shiftKey ? 10 : 1;

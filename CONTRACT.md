@@ -85,6 +85,8 @@ All pass/fail. No subjective checks.
 | 60 | Reload warning from the dot | A panel opened from the dot still shows the stylesheet-reload warning after Copy; closing reverts |
 | 61 | Collapse | Clicking the header hides the list, the property controls and the hint, keeps the buttons, shows a badge with the change count, and halves the panel height (under 110px). Changes made while collapsed keep it collapsed and update the badge; selecting a text element does not reveal the controls; Copy and the reload warning still work. Clicking again restores everything and hides the badge |
 | 62 | Collapse and close | The × closes without toggling collapse; a dormant instance reopened from the dot is still collapsed |
+| 63 | Click selects, drag moves | With a section selected, a click on a paragraph inside it selects the paragraph and records nothing; a 2px wobble is still a click; a real drag from the same point moves the section and leaves it selected |
+| 64 | Select the parent | Option+ArrowUp from a paragraph selects its wrapper, then the section, and stops there rather than reaching body, saying so in the status. Option+ArrowDown retraces the path and stops at the start. A plain arrow still nudges. A fresh click clears the path |
 
 ## Test Plan
 
@@ -179,6 +181,12 @@ First run: one failure, real. The bookmarklet path was creating the dot and hidi
 ## Collapsible panel (16 Sep 2026, branch feat/collapse, checks 61–62)
 
 After three changes in Claude Code's 964px pane the panel covered much of the section being edited. Clicking the header now folds the panel to its header and button row; a badge on the header carries the change count. It stays collapsed while working, so a selection does not reopen it, and the state survives sleep and wake. Deliberately not automatic: a panel that resizes when the pointer leaves it moves under the user, which is what broke the steppers. 62/62 first run, stable over `--repeat-each 3`.
+
+## Click selects, drag moves; select the parent (16 Sep 2026, branch feat/select-through, checks 63–64)
+
+Found in use: with a section selected after a resize, nothing inside it could be selected, because any mouse-down inside the selection started a move. A move now waits for 3px of movement, and a release without it selects the element under the pointer. Option+ArrowUp selects the parent and Option+ArrowDown returns, which is the only way to reach a wrapper whose surface is entirely its children. Closes the select-parent issue (#8).
+
+One existing check changed, by design: check 27 proved that a click without movement leaves a sent preview alone by clicking the figure's centre. It still proves that, but the centre is the figure's image and a click there now selects the image, so the click moved to the figure's padding. 64/64, stable over `--repeat-each 3`.
 
 ## Expected first failures
 
