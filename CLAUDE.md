@@ -8,6 +8,7 @@ Public repo: https://github.com/g1d30nB/nudge (MIT). Install page: https://g1d30
 
 - `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr pinned to a release tag (`cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js`); the development bookmarklet, used while building, loads it from 127.0.0.1:7357.
 - `bookmarklet.txt`: both loaders, labelled.
+- `docs/nudge-in-claude-code.gif`: the second README demo, nudge as a dot inside Claude Code's built-in browser (800px, 6fps, 64 colours, about 6.5MB; the 12MB original is on Gideon's Desktop).
 - `docs/nudge-demo.gif`: the README demo. Recorded on a throwaway wireframe page that is not in the repo (kept locally in `demo/`, gitignored). Keep it under about 5MB.
 - `docs/index.html`: install page with the draggable `javascript:` link and the paste-into-Claude-Code prompt for the in-project install, served by GitHub Pages. GitHub strips `javascript:` links from rendered READMEs, which is why this page exists.
 - `LICENSE`: MIT.

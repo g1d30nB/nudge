@@ -49,6 +49,8 @@ It is the same file and the same release, loaded a second way. Nothing separate,
 
 ### What you get
 
+![nudge as a dot inside Claude Code's built-in browser, with batches pasted into Claude Code beside it](docs/nudge-in-claude-code.gif)
+
 Instead of the panel, a small blue dot in the bottom left corner of every page while you are developing. Click the dot to open nudge; close the panel and the dot comes back. Your bookmark still works on the same page: it opens the panel if the dot is showing and closes it if the panel is open. Option-click the dot to hide it until the page reloads, for screenshots.
 
 ### The easy way: ask Claude Code
