@@ -39,7 +39,7 @@ javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.
 
 <a id="putting-nudge-in-your-project"></a>
-## In your project: nudge in Claude Code's built-in browser
+## In your project: use nudge in Claude Code's built-in browser
 
 The [bookmark](https://g1d30nb.github.io/nudge/) is how to try nudge. There are two reasons to go further and put nudge in the project itself.
 
