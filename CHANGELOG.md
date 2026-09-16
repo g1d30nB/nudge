@@ -2,6 +2,12 @@
 
 Installed bookmarks are pinned to a release. To get a new release, reinstall the bookmark from the [install page](https://g1d30nb.github.io/nudge/).
 
+## Unreleased
+
+### Added
+
+- **Collapse the panel.** Click its header to fold it to a single row with the change count and the Copy button, so the page stays visible while you work. Click again to expand.
+
 ## v1.2.0, 16 September 2026
 
 ### Added

@@ -1270,3 +1270,61 @@ test('60 the reload warning still fires for a panel opened from the dot', async 
   await expect(dotEl(page)).toBeVisible();
   expect(await changes(page)).toHaveLength(0);
 });
+
+/* ───────────── collapsible panel (checks 61–62) ───────────── */
+
+const panelH = (page) => page.evaluate(() => Math.round(window.__nudge._state.els.panel.getBoundingClientRect().height));
+const collapsed = (page) => page.evaluate(() => window.__nudge._state.collapsed);
+
+test('61 clicking the header collapses the panel to its header and buttons; changes update a badge', async ({ page }) => {
+  await inject(page);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 40);
+  const open = await panelH(page);
+  await expect(page.locator('#nudge-props')).toBeVisible();
+  await page.locator('#nudge-head').click();
+  expect(await collapsed(page)).toBe(true);
+  await expect(page.locator('#nudge-list')).toBeHidden();
+  await expect(page.locator('#nudge-props')).toBeHidden();
+  await expect(page.locator('#nudge-hint')).toBeHidden();
+  await expect(page.locator('#nudge-copy')).toBeVisible();
+  await expect(page.locator('#nudge-count')).toHaveText('1');
+  expect(await panelH(page)).toBeLessThan(open / 2);
+  expect(await panelH(page)).toBeLessThan(110);
+
+  // Working while collapsed keeps it collapsed; the badge counts; selecting text does not reveal the controls.
+  await select(page, '#rotated');
+  await page.keyboard.press('ArrowDown');
+  expect(await collapsed(page)).toBe(true);
+  await expect(page.locator('#nudge-count')).toHaveText('2');
+  await select(page, TYPE_T);
+  await expect(page.locator('#nudge-props')).toBeHidden();
+  await expect(page.locator('#nudge-list')).toBeHidden();
+
+  // Copy still works collapsed; the reload warning still shows.
+  await copyAndSettle(page);
+  await expect(page.locator('#nudge-copy')).toHaveText('Clear preview');
+  await page.evaluate(() => { const s = document.querySelector('head style'); s.textContent = s.textContent + '\n'; });
+  await expect(page.locator('#nudge-reload')).toBeVisible();
+
+  // Expand: everything comes back, badge goes.
+  await page.locator('#nudge-head').click();
+  expect(await collapsed(page)).toBe(false);
+  await expect(page.locator('#nudge-list')).toBeVisible();
+  await expect(page.locator('#nudge-props')).toBeVisible();
+  await expect(page.locator('#nudge-count')).toBeHidden();
+});
+
+test('62 the close button does not toggle collapse, and the collapsed state survives sleep and wake', async ({ page }) => {
+  await serveDormant(page, LOCAL);
+  await dotEl(page).click();
+  await page.locator('#nudge-head').click();
+  expect(await collapsed(page)).toBe(true);
+  await page.locator('#nudge-close').click();
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: false });
+  await dotEl(page).click();
+  expect(await collapsed(page)).toBe(true);
+  await expect(page.locator('#nudge-list')).toBeHidden();
+  await page.locator('#nudge-head').click();
+  expect(await collapsed(page)).toBe(false);
+});

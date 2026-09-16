@@ -53,6 +53,7 @@
     palette: null,          // which colour property's palette is open: 'color' | 'backgroundColor'
     awake: false,           // panel open and page listeners attached
     dotHidden: false,       // Option-click on the dot hides it until the page reloads
+    collapsed: false,       // panel folded to its header and buttons, so the page stays visible while working
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -655,9 +656,11 @@
     background:#1c1b19;color:#ece7df;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);z-index:${Z + 1};
     font:12px/1.45 -apple-system,system-ui,sans-serif;overflow:hidden;`;
   panel.innerHTML = `
-    <div data-nudge style="padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #2c2a27;">
+    <div data-nudge id="nudge-head" title="Collapse" style="padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #2c2a27;cursor:pointer;user-select:none;">
+      <span data-nudge id="nudge-chev" style="color:#6f6a62;font-size:10px;width:8px;flex-shrink:0">▾</span>
       <strong style="font-size:13px;letter-spacing:.01em">nudge</strong>
-      <span data-nudge id="nudge-status" style="color:#9c958b;flex:1">Click an element to start.</span>
+      <span data-nudge id="nudge-count" style="display:none;background:#2f6fed;color:#fff;border-radius:9px;padding:0 6px;font:600 11px/17px system-ui;flex-shrink:0"></span>
+      <span data-nudge id="nudge-status" style="color:#9c958b;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Click an element to start.</span>
       <button data-nudge id="nudge-close" title="Close (discards uncommitted changes)" style="background:none;border:0;color:#9c958b;font-size:16px;cursor:pointer;line-height:1">×</button>
     </div>
     <div data-nudge id="nudge-reload" style="display:none;padding:8px 14px;background:#3a2f12;color:#f2c86b;border-bottom:1px solid #2c2a27;">The page reloaded. Clear the preview to see the real result.</div>
@@ -679,7 +682,7 @@
       <button data-nudge id="nudge-recopy" style="display:none;background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Re-copy</button>
       <button data-nudge id="nudge-reset" style="background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Reset</button>
     </div>
-    <div data-nudge style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · shift disables snap · esc deselect</div>`;
+    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · shift disables snap · esc deselect</div>`;
 
   const $ = (id) => panel.querySelector('#' + id);
   const setStatus = (t) => { $('nudge-status').textContent = t; };
@@ -713,8 +716,22 @@
     return bits.join(' · ');
   }
 
+  // Collapsed, the panel is its header and its buttons. The list, the property controls and the hint fold
+  // away, and a badge on the header carries the change count so nothing is lost from view.
+  function setCollapsed(v) {
+    state.collapsed = !!v;
+    $('nudge-chev').textContent = state.collapsed ? '▸' : '▾';
+    $('nudge-head').title = state.collapsed ? 'Expand' : 'Collapse';
+    render(); renderProps();
+  }
+
   function render() {
     const sent = sentRecs(), unsent = unsentRecs();
+    $('nudge-list').style.display = state.collapsed ? 'none' : '';
+    $('nudge-hint').style.display = state.collapsed ? 'none' : '';
+    const n = state.changes.size, badge = $('nudge-count');
+    badge.textContent = String(n);
+    badge.style.display = state.collapsed && n ? '' : 'none';
     $('nudge-copy').textContent = state.copyLock ? 'Copied' : (sent.length && !unsent.length ? 'Clear preview' : 'Copy for Claude Code');
     $('nudge-recopy').style.display = sent.length ? '' : 'none';
     $('nudge-reload').style.display = sent.some((r) => r.sentSeq < state.reloadSeq) ? 'block' : 'none';
@@ -851,7 +868,7 @@
     $('nudge-type').style.display = showType ? '' : 'none';
     $('nudge-colour').style.display = colours.length ? '' : 'none';
     $('nudge-colour').style.marginTop = showType && colours.length ? '8px' : '0';
-    $('nudge-props').style.display = showType || colours.length ? '' : 'none';
+    $('nudge-props').style.display = (showType || colours.length) && !state.collapsed ? '' : 'none';
     renderColour(el, colours);
     if (!showType) return;
     const r = state.changes.get(el);
@@ -1308,7 +1325,8 @@
     $('nudge-copy').addEventListener('click', primary);
     $('nudge-recopy').addEventListener('click', recopy);
     $('nudge-reset').addEventListener('click', resetAll);
-    $('nudge-close').addEventListener('click', close);
+    $('nudge-close').addEventListener('click', (e) => { e.stopPropagation(); close(); });
+    $('nudge-head').addEventListener('click', () => setCollapsed(!state.collapsed));
     TYPE.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });
     rootObserver.observe(root, { childList: true });
     hookHistory();
@@ -1340,6 +1358,7 @@
       get editing() { return state.editing && state.editing.el; },
       get awake() { return state.awake; },
       get mode() { return DORMANT ? 'dormant' : 'bookmarklet'; },
+      get collapsed() { return state.collapsed; },
       els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot },
     },
   };
