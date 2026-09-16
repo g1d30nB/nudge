@@ -24,11 +24,11 @@ You drag on the running page. nudge records what changed and what it lined up wi
 
 nudge never writes to your files.
 
-## Install
+## Install: nudge in your main browser
 
 Go to the [install page](https://g1d30nb.github.io/nudge/) and drag the link to your bookmarks bar. That is all.
 
-A bookmark needs a bookmarks bar, so open the page you are working on in an ordinary browser such as Chrome, Safari or Firefox. That can be your local dev server or a live site. Claude Code's built-in browser has no bookmarks bar; to use nudge there, see [Putting nudge in your project](#putting-nudge-in-your-project) below.
+A bookmark needs a bookmarks bar, so open the page you are working on in an ordinary browser such as Chrome, Safari or Firefox. That can be your local dev server or a live site. Claude Code's built-in browser has no bookmarks bar; to use nudge there, see [In your project](#putting-nudge-in-your-project) below.
 
 There is no clone, no server, no npm, and nothing is added to your project. The bookmark loads `nudge.js` from jsDelivr when you click it. If you would rather make the bookmark by hand, paste this line as its URL:
 
@@ -38,7 +38,8 @@ javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=
 
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.
 
-## Putting nudge in your project
+<a id="putting-nudge-in-your-project"></a>
+## In your project: nudge in Claude Code's built-in browser
 
 The [bookmark](https://g1d30nb.github.io/nudge/) is how to try nudge. There are two reasons to go further and put nudge in the project itself.
 
