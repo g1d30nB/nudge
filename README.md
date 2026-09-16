@@ -36,6 +36,93 @@ javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=
 
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.
 
+## In the page, for daily use
+
+The bookmark is the way to try nudge. If you use it every day on one project, you can put it in the project instead, so it is there on every page load without a bookmarks bar. That also makes it work in browsers that have no bookmarks bar, such as the browser pane inside Claude Code.
+
+It is the same file and the same release, loaded a second way. Not a separate or experimental version.
+
+One script tag, nothing to download:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js" data-nudge-dormant></script>
+```
+
+The `data-nudge-dormant` attribute matters. With it, nudge loads asleep: a small blue dot in the bottom left corner instead of the panel. Click the dot to open nudge; close the panel to go back to the dot. Option-click the dot to hide it until the page reloads, for screenshots. Without the attribute the panel opens on every page load, which is the bookmarklet's behaviour and not what you want in a project.
+
+Add the tag to your dev layout only. Each snippet below uses the framework's own dev flag, so the tag cannot reach a production build. That guard is the real protection. As a backstop, with the attribute nudge refuses to run unless the hostname is `localhost`, `127.0.0.1`, `::1`, or ends in `.localhost` or `.local`, and logs one line in the console saying so. The bookmarklet skips that check; it is meant for live sites.
+
+Each snippet was checked on a fresh project: the dev server renders the tag, and the production build does not contain it.
+
+**Astro** (a layout or `src/pages/index.astro`, before `</body>`; `is:inline` stops Astro bundling it):
+
+```astro
+{import.meta.env.DEV && <script is:inline src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js" data-nudge-dormant></script>}
+```
+
+**Next.js, app router** (`app/layout.tsx`, inside `<body>` after `{children}`):
+
+```tsx
+{process.env.NODE_ENV === 'development' && (
+  // eslint-disable-next-line @next/next/no-sync-scripts
+  <script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js" data-nudge-dormant="" />
+)}
+```
+
+**Vite with React** (`src/main.jsx` or `main.tsx`; Vite's `index.html` has no conditionals, so add the tag from code and let the build drop it):
+
+```js
+if (import.meta.env.DEV) {
+  const s = document.createElement('script')
+  s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js'
+  s.setAttribute('data-nudge-dormant', '')
+  document.body.appendChild(s)
+}
+```
+
+**SvelteKit** (`src/routes/+layout.svelte`, the same idea; a `{#if dev}` block in markup keeps the tag out of the page but leaves the URL as dead text in the client bundle, so add it from code instead):
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  let { children } = $props();
+  onMount(() => {
+    if (import.meta.env.DEV) {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js';
+      s.setAttribute('data-nudge-dormant', '');
+      document.body.appendChild(s);
+    }
+  });
+</script>
+
+{@render children()}
+```
+
+**Nuxt** (`app/app.vue` or `app.vue`):
+
+```vue
+<script setup lang="ts">
+if (import.meta.dev) {
+  useHead({ script: [{ src: 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js', 'data-nudge-dormant': '' }] })
+}
+</script>
+```
+
+**Plain HTML with no build step:** there is no build, so there is no guard. Put the tag before `</body>` and remove it before you deploy. The hostname backstop stops it running on a live domain, but do not rely on that; take the line out.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js" data-nudge-dormant></script>
+```
+
+**Self-hosting**, for projects whose Content-Security-Policy blocks outside scripts: download `nudge.js` from the [release](https://github.com/g1d30nB/nudge/releases), put it in the project's public folder, and point the tag at `/nudge.js`. Same file, same guard, same attribute.
+
+```html
+<script src="/nudge.js" data-nudge-dormant></script>
+```
+
+If the bookmark is clicked on a page that already has nudge loaded this way, it opens the panel if the dot is showing and closes it if the panel is open. Loading the file twice does nothing.
+
 ## Use it
 
 - Click the bookmark to open nudge. Click it again to close it.
@@ -91,7 +178,7 @@ When an element was held back by a max-width the browser computed, from a clamp 
 
 The measurements and alignments are the same on every page. nudge takes them from the rendered layout, so nothing about your stack changes what it can capture.
 
-The file path on each entry is the one exception. nudge can only print it where the framework puts it in the page, which in practice means Astro in dev mode. Everywhere else the agent gets the selector path and a text snippet and finds the file itself, which is the ordinary way an agent locates code. I have used that on Astro; reports from other stacks are welcome, and there is [an open issue](https://github.com/g1d30nB/nudge/issues/6) for them.
+The file path on each entry is the one exception. nudge can only print it where the framework puts source attributes in the page. Astro did this in dev mode up to version 6; Astro 7's new compiler does not, so on current Astro the agent gets the selector path and a text snippet and finds the file itself, which is the ordinary way an agent locates code. Reports from any stack are welcome, and there is [an open issue](https://github.com/g1d30nB/nudge/issues/6) for them.
 
 The batch is plain text written for a coding agent. It has been used with Claude Code, which is why the button says so.
 
@@ -112,7 +199,9 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 - Text editing is plain text only, in elements with no child elements.
 - No font family control. nudge cannot see which fonts are installed or loaded.
 - Type values are read from the rendered page, so they are measured in pixels even when the source uses rem, em or clamp. The batch adds the rem equivalent for font size, the em equivalent for letter spacing and the ratio for line height, so the agent can match the source's units. A clamp() cannot be recovered.
-- The colour palette only lists tokens declared on `:root`. Tokens in stylesheets served from another site cannot be read.
+- The colour palette only lists tokens declared on `:root`, and only from stylesheets the browser lets a page read. A stylesheet served from another site, for example a hosted design system on a CDN, cannot be read, so its tokens are invisible: the palette omits them and a colour that matches one is reported as matching no token. The panel says how many stylesheets it could not read.
+- A native `<dialog>` opened with `showModal()`, or a popover, sits in the browser's top layer and covers nudge's panel and dot. Close it first.
+- In dormant mode, an element a framework re-renders without a route change keeps its record until you clear the preview; only route changes drop records for removed elements.
 - No multi-select.
 - No gesture to select an element's parent.
 - Pages with a Content-Security-Policy that blocks external scripts refuse the loader, and the bookmark does nothing.

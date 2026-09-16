@@ -1087,3 +1087,186 @@ test('51 computed font size and letter spacing come with rem and em equivalents'
   expect(lines).toContain('as em of the font size: -0.035em → -0.0036em');
   expect(lines.indexOf('letter spacing -1.12px → -0.12px')).toBeGreaterThan(i + 1);
 });
+
+/* ───────────── dormant mode, the dot, the hostname guard (checks 52–60) ───────────── */
+
+const LOCAL = 'http://localhost:4173';
+
+// Serve the fixture from any origin with the dormant script tag in <head> or at the end of <body>.
+async function serveDormant(page, origin, place = 'body') {
+  await page.route(`${origin}/**`, async (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === '/nudge.js') return route.fulfill({ contentType: 'text/javascript', body: await readFile(NUDGE, 'utf8') });
+    if (p === '/elsewhere') return route.fulfill({ contentType: 'text/html', body: '<title>elsewhere</title><p>navigated</p>' });
+    let html = await readFile(path.join(here, 'fixture.html'), 'utf8');
+    const tag = `<script src="${origin}/nudge.js" data-nudge-dormant></script>`;
+    html = place === 'head' ? html.replace('<style>', tag + '\n<style>') : html.replace('</body>', tag + '\n</body>');
+    return route.fulfill({ contentType: 'text/html', body: html });
+  });
+  await page.goto(`${origin}/fixture.html`);
+}
+
+const dotEl = (page) => page.locator('[data-nudge-dot]');
+const mode = (page) => page.evaluate(() => (window.__nudge ? { mode: window.__nudge._state.mode, awake: window.__nudge._state.awake } : null));
+const panelVisible = (page) => page.evaluate(() => { const p = window.__nudge && window.__nudge._state.els.panel; return !!p && p.isConnected && getComputedStyle(p).display !== 'none'; });
+const dotRect = (page) => page.evaluate(() => { const d = document.querySelector('[data-nudge-dot]'); if (!d || d.hidden) return null; const b = d.getBoundingClientRect(); return { left: b.left, bottom: b.bottom, width: b.width, height: b.height, cx: b.left + b.width / 2, cy: b.top + b.height / 2, vh: innerHeight, vw: innerWidth }; });
+
+test('52 dormant load: a dot, not a panel; the page behaves normally until the dot is clicked', async ({ page }) => {
+  await serveDormant(page, LOCAL, 'body');
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: false });
+  expect(await panelVisible(page)).toBe(false);
+  const d = await dotRect(page);
+  expect(d.width).toBe(10);
+  expect(d.left).toBe(14);
+  expect(d.vh - d.bottom).toBe(14);
+  await expect(dotEl(page)).toHaveAttribute('title', 'nudge');
+
+  // Asleep, nudge does not capture the page: links navigate.
+  await page.locator('#link').click();
+  await page.waitForURL('**/elsewhere');
+  await page.goto(`${LOCAL}/fixture.html`);
+  await expect(dotEl(page)).toBeVisible();
+
+  // Click the dot: the panel opens exactly as the bookmarklet's does, and a gesture works.
+  await dotEl(page).click();
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: true });
+  expect(await panelVisible(page)).toBe(true);
+  await expect(dotEl(page)).toBeHidden();
+  const before = await cssText(page, TAGLINE);
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  expect(await report(page)).toContain('width 540px → 640px');
+
+  // Close: back to the dot, previews discarded, page free again.
+  await page.locator('#nudge-close').click();
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: false });
+  expect(await panelVisible(page)).toBe(false);
+  await expect(dotEl(page)).toBeVisible();
+  expect(await cssText(page, TAGLINE)).toBe(before);
+  await page.locator('#link').click();
+  await page.waitForURL('**/elsewhere');
+});
+
+test('53 the bookmarklet toggles a dormant instance; loading the file twice does nothing', async ({ page }) => {
+  await serveDormant(page, LOCAL);
+  await page.addScriptTag({ url: `${LOCAL}/nudge.js?bm=1` });          // bookmarklet: no attribute
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: true });
+  expect(await panelVisible(page)).toBe(true);
+  await page.addScriptTag({ url: `${LOCAL}/nudge.js?bm=2` });
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: false });
+  await expect(dotEl(page)).toBeVisible();
+  await expect(dotEl(page)).toHaveCount(1);
+  await page.evaluate((u) => new Promise((r) => { const s = document.createElement('script'); s.src = u; s.setAttribute('data-nudge-dormant', ''); s.onload = r; document.head.appendChild(s); }), `${LOCAL}/nudge.js?again=1`);
+  await expect(dotEl(page)).toHaveCount(1);
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: false });
+});
+
+test('54 hostname guard: the script tag refuses to run off a local host; the bookmarklet is unaffected', async ({ page }) => {
+  const warnings = [];
+  page.on('console', (m) => { if (m.type() === 'warning') warnings.push(m.text()); });
+  await serveDormant(page, ORIGIN);                                   // https://nudge.test
+  expect(await page.evaluate(() => typeof window.__nudge)).toBe('undefined');
+  await expect(dotEl(page)).toHaveCount(0);
+  expect(await page.locator('[data-nudge]').count()).toBe(0);
+  expect(warnings).toHaveLength(1);
+  expect(warnings[0]).toContain('nudge: not running on "nudge.test"');
+  await inject(page);                                                   // bookmarklet path on the same host
+  expect(await mode(page)).toEqual({ mode: 'bookmarklet', awake: true });
+  await expect(dotEl(page)).toHaveCount(0);
+
+  for (const origin of ['http://app.local', 'http://127.0.0.1:4173']) {
+    await serveDormant(page, origin);
+    expect(await mode(page)).toEqual({ mode: 'dormant', awake: false });
+    await expect(dotEl(page)).toBeVisible();
+  }
+  expect(warnings).toHaveLength(1);
+});
+
+test('55 a script tag in <head>, before <body> exists, still ends up as a dot', async ({ page }) => {
+  await serveDormant(page, LOCAL, 'head');
+  await expect(dotEl(page)).toBeVisible();
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: false });
+  await dotEl(page).click();
+  expect(await panelVisible(page)).toBe(true);
+  await expect(page.locator('#nudge-list')).toHaveText('No changes yet.');
+});
+
+test('56 the dot and panel sit above a page overlay at the maximum z-index and outside transformed ancestors', async ({ page }) => {
+  await serveDormant(page, LOCAL);
+  await page.evaluate(() => { document.querySelector('#modal').hidden = false; });
+  let d = await dotRect(page);
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y).hasAttribute('data-nudge-dot'), [d.cx, d.cy])).toBe(true);
+  await dotEl(page).click();
+  const b = await page.locator('#nudge-copy').boundingBox();
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x, y).id, [b.x + b.width / 2, b.y + b.height / 2])).toBe('nudge-copy');
+  await page.locator('#nudge-close').click();
+  await page.evaluate(() => { document.querySelector('#modal').hidden = true; document.body.style.transform = 'translateZ(0)'; document.body.style.filter = 'contrast(1)'; });
+  d = await dotRect(page);
+  expect(d.left).toBe(14);
+  expect(d.vh - d.bottom).toBe(14);
+});
+
+test('57 narrow viewport: the dot is reachable and the panel stays on screen', async ({ page }) => {
+  await page.setViewportSize({ width: 380, height: 700 });
+  await serveDormant(page, LOCAL);
+  const d = await dotRect(page);
+  expect(d.left).toBeGreaterThanOrEqual(0);
+  expect(d.bottom).toBeLessThanOrEqual(700);
+  await dotEl(page).click();
+  const p = await page.evaluate(() => { const b = window.__nudge._state.els.panel.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }; });
+  expect(p.left).toBeGreaterThanOrEqual(0);
+  expect(p.right).toBeLessThanOrEqual(380);
+  expect(p.top).toBeGreaterThanOrEqual(0);
+  expect(p.bottom).toBeLessThanOrEqual(700);
+});
+
+test('58 Option-click hides the dot until the page reloads', async ({ page }) => {
+  await serveDormant(page, LOCAL);
+  await dotEl(page).click({ modifiers: ['Alt'] });
+  await expect(dotEl(page)).toBeHidden();
+  expect(await mode(page)).toEqual({ mode: 'dormant', awake: false });
+  await page.addScriptTag({ url: `${LOCAL}/nudge.js?bm=1` });          // the bookmarklet still opens it
+  expect(await panelVisible(page)).toBe(true);
+  await page.locator('#nudge-close').click();
+  await expect(dotEl(page)).toBeHidden();                              // stays hidden after closing
+  await page.reload();
+  await expect(dotEl(page)).toBeVisible();
+});
+
+test('59 a client-side route change keeps the dot and drops records on removed elements', async ({ page }) => {
+  await serveDormant(page, LOCAL);
+  await dotEl(page).click();
+  await select(page, '#rotated');
+  await page.keyboard.press('ArrowDown');
+  expect(await changes(page)).toHaveLength(1);
+  await page.evaluate(() => { history.pushState({}, '', '/about'); document.body.innerHTML = '<main><h1 id="about">About</h1></main>'; });
+  await page.waitForTimeout(400);
+  expect(await changes(page)).toHaveLength(0);
+  expect(await selectedIs(page, null)).toBe(true);
+  expect(await panelVisible(page)).toBe(true);
+  await expect(page.locator('#nudge-list')).toHaveText('No changes yet.');
+  await select(page, '#about');
+  expect(await selectedIs(page, '#about')).toBe(true);
+  // Removing nudge's nodes from <html>, as a framework swapping the whole document might, brings them back.
+  await page.locator('#nudge-close').click();
+  await page.evaluate(() => document.querySelectorAll('[data-nudge]').forEach((n) => n.parentNode === document.documentElement && n.remove()));
+  await page.waitForTimeout(50);
+  await expect(dotEl(page)).toHaveCount(1);
+  await expect(dotEl(page)).toBeVisible();
+  await page.evaluate(() => history.back());
+  await page.waitForTimeout(400);
+  await expect(dotEl(page)).toHaveCount(1);
+});
+
+test('60 the reload warning still fires for a panel opened from the dot', async ({ page }) => {
+  await serveDormant(page, LOCAL);
+  await dotEl(page).click();
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  await copyAndSettle(page);
+  await page.evaluate(() => { const s = document.querySelector('head style'); s.textContent = s.textContent + '\n'; });
+  await expect(page.locator('#nudge-reload')).toBeVisible();
+  await page.locator('#nudge-close').click();
+  await expect(dotEl(page)).toBeVisible();
+  expect(await changes(page)).toHaveLength(0);
+});
