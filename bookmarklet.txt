@@ -1,7 +1,7 @@
 # nudge bookmarklets. Each is one line; paste it as the URL of a new bookmark.
 
-# Install: loads nudge v1.2.0 from jsDelivr, pinned to the release tag. Use this one.
-javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
+# Install: loads nudge v1.2.1 from jsDelivr, pinned to the release tag. Use this one.
+javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
 
 # Development: loads nudge.js from a static server on 127.0.0.1:7357, for working on nudge itself.
 # Serve this folder first: python3 -m http.server 7357 --bind 127.0.0.1
