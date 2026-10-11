@@ -61,6 +61,7 @@
     expect: null,           // the last sent batch's expected measurements, mirrored in sessionStorage
     xray: false,            // outlines on every container, to find wrappers that have no surface of their own
     pin: null,              // the element "m" matches the selection to
+    measure: false,         // rulers and gap drags without holding Option, from the Measure button
     matching: false,        // true while matchPin drives the setters, so they keep the match note
     history: [],            // every batch sent this page load: { batch, at, text }
     recopies: 0,            // Re-copy presses since the last batch, for the nudge when a paste keeps failing
@@ -313,8 +314,8 @@
   function togglePin() {
     const el = state.selected;
     state.pin = state.pin === el ? null : el;
-    updatePin();
-    setStatus(state.pin ? `Pinned ${descriptor(el)}. Select another element and press m to match it.` : 'Pin removed.');
+    updatePin(); renderActions();
+    setStatus(state.pin ? `Pinned ${descriptor(el)}. Select another element and press m, or its Match button.` : 'Pin removed.');
   }
   function updatePin() {
     if (state.pin && document.contains(state.pin) && state.awake) place(pinBox, state.pin.getBoundingClientRect());
@@ -1175,12 +1176,14 @@
       <span data-nudge id="nudge-chev" style="color:#6f6a62;font-size:10px;width:8px;flex-shrink:0">▾</span>
       <strong style="font-size:13px;letter-spacing:.01em">nudge</strong>
       <span data-nudge id="nudge-count" style="display:none;background:#2f6fed;color:#fff;border-radius:9px;padding:0 6px;font:600 11px/17px system-ui;flex-shrink:0"></span>
+      <button data-nudge id="nudge-xray" type="button" title="Outline every container (x)" style="background:none;border:1px solid #3a3733;color:#9c958b;border-radius:4px;padding:0 5px;font:11px/17px system-ui;cursor:pointer;flex-shrink:0;white-space:nowrap">x-ray</button>
       <span data-nudge id="nudge-status" style="color:#9c958b;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Click an element to start.</span>
       <button data-nudge id="nudge-vp" type="button" style="background:none;border:1px solid #3a3733;color:#9c958b;border-radius:4px;padding:0 5px;font:11px/17px ui-monospace,Menlo,monospace;cursor:pointer;flex-shrink:0;white-space:nowrap"></button>
       <button data-nudge id="nudge-close" title="Close (discards uncommitted changes)" style="background:none;border:0;color:#9c958b;font-size:16px;cursor:pointer;line-height:1">×</button>
     </div>
     <div data-nudge id="nudge-reload" style="display:none;padding:8px 14px;background:#3a2f12;color:#f2c86b;border-bottom:1px solid #2c2a27;">The page reloaded. Clear the preview to see the real result.</div>
     <div data-nudge id="nudge-verdict" style="display:none;padding:8px 14px;background:#1f2e22;color:#9fd3a8;border-bottom:1px solid #2c2a27;white-space:pre-wrap;"></div>
+    <div data-nudge id="nudge-actions" style="display:none;padding:7px 14px 0;gap:6px;flex-wrap:wrap;"></div>
     <div data-nudge id="nudge-list" style="flex:1;overflow:auto;padding:6px 0;"></div>
     <div data-nudge id="nudge-size" style="display:none;padding:8px 14px;border-top:1px solid #2c2a27;">
       <div data-nudge style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
@@ -1204,7 +1207,7 @@
       <button data-nudge id="nudge-recopy" style="display:none;background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Re-copy</button>
       <button data-nudge id="nudge-reset" style="background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Reset</button>
     </div>
-    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · ⌥↑ parent · ⌥-hover measures, ⌥-drag sets the gap · p pin, m match · a siblings · x x-ray · shift disables snap · esc deselect</div>`;
+    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · double-click edits text · ⌫ remove · arrows nudge · ⌥↑ parent · ⌥-hover measures, ⌥-drag sets the gap · p pin, m match · a siblings · x x-ray · shift disables snap · esc deselect</div>`;
 
   const $ = (id) => panel.querySelector('#' + id);
   const setStatus = (t) => { $('nudge-status').textContent = t; };
@@ -1250,6 +1253,52 @@
     render(); renderProps();
   }
 
+  // The action row: the selection's own verbs, shown only when they apply, so it holds two to five small
+  // buttons and never becomes a toolbar. The keys they stand for keep working.
+  function renderActions() {
+    const row = $('nudge-actions');
+    const el = state.selected;
+    row.textContent = '';
+    if (!el || !document.contains(el) || state.collapsed) { row.style.display = 'none'; return; }
+    const r = state.changes.get(el);
+    const items = [];
+    items.push(state.pin === el ? ['Unpin', togglePin, 'Remove the pin (p)'] : ['Pin', togglePin, 'Pin this element, then Match another to it (p)']);
+    if (state.pin && state.pin !== el && document.contains(state.pin)) items.push(['Match', matchPin, `Make this match ${descriptor(state.pin)} (m)`]);
+    if (r && !isNoop(r) && !r.removed && (r.also || siblingsOf(el).length)) items.push(r.also ? ['Release siblings', toggleSiblings, 'Take the change off the siblings (a)'] : ['Siblings', toggleSiblings, 'Apply this change to the siblings with the same tag and classes (a)']);
+    items.push([state.measure ? 'Stop measuring' : 'Measure', toggleMeasure, 'Hover another element for the distance, drag it to set the gap (or hold Option)']);
+    items.push(['Remove', removeSelected, 'Remove this element (Backspace)']);
+    items.forEach(([text, fn, title]) => {
+      const lit = (text === 'Unpin') || (text === 'Stop measuring') || (text === 'Release siblings');
+      const b = node('button', `background:${lit ? '#2c2a27' : 'none'};border:1px solid ${lit ? '#6f6a62' : '#3a3733'};color:${lit ? '#ece7df' : '#9c958b'};border-radius:5px;padding:2px 8px;font:11px system-ui;cursor:pointer;`, text);
+      b.type = 'button'; b.dataset.action = text.toLowerCase().replace(/ .*/, ''); b.title = title;
+      b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+      row.appendChild(b);
+    });
+    row.style.display = 'flex';
+  }
+  function toggleXray() {
+    state.xray = !state.xray;
+    drawXray();
+    const b = $('nudge-xray');
+    b.style.color = state.xray ? '#c9d8f7' : '#9c958b'; b.style.borderColor = state.xray ? '#2f6fed' : '#3a3733';
+    if (state.xray) setStatus('X-ray on: every container outlined. Press x to turn it off.');
+    else if (state.selected) showCrumbs(state.selected); else setStatus(idleStatus());
+  }
+  function toggleMeasure() {
+    state.measure = !state.measure;
+    if (!state.measure) drawRulers(null);
+    renderActions();
+    if (state.measure) setStatus('Measuring: hover another element for the distance, drag it to set the gap. Escape stops.');
+    else if (state.selected) showCrumbs(state.selected);
+  }
+  function removeSelected() {
+    if (!state.selected) return;
+    state.notice = null;
+    const r = rec(state.selected); r.removed = true; apply(r);
+    finish(r); select(null);
+    if (state.notice) setStatus(state.notice);
+  }
+
   // The badge reads "1280 · 1200+" : the viewport width, then the range it falls in. It is a button: click
   // draws the breakpoint lines.
   function renderViewport() {
@@ -1267,6 +1316,7 @@
 
   function render() {
     renderViewport();
+    renderActions();
     const sent = sentRecs(), unsent = unsentRecs();
     $('nudge-list').style.display = state.collapsed ? 'none' : '';
     $('nudge-hint').style.display = state.collapsed ? 'none' : '';
@@ -1655,6 +1705,7 @@
     state.selected = el;
     updateBoxes();
     renderProps();
+    renderActions();
     if (el) showCrumbs(el);
     else setStatus(idleStatus());
   }
@@ -1674,6 +1725,18 @@
       crumb.addEventListener('click', (e) => { e.stopPropagation(); if (document.contains(cur)) select(cur); });
       st.appendChild(crumb);
     });
+    // The pin, when it is not the selection: its name selects it, the × removes it.
+    if (state.pin && state.pin !== el && document.contains(state.pin)) {
+      const pin = state.pin;
+      st.appendChild(node('span', 'color:#6f6a62;white-space:pre', ' · pin: '));
+      const name = node('span', 'cursor:pointer;color:#e0a030', descriptor(pin).split(' > ').pop());
+      name.dataset.pinned = ''; name.title = 'select the pinned element';
+      name.addEventListener('click', (e) => { e.stopPropagation(); select(pin); });
+      const off = node('span', 'cursor:pointer;color:#6f6a62;white-space:pre', ' ×');
+      off.dataset.unpin = ''; off.title = 'remove the pin';
+      off.addEventListener('click', (e) => { e.stopPropagation(); state.pin = null; updatePin(); renderActions(); showCrumbs(el); });
+      st.appendChild(name); st.appendChild(off);
+    }
   }
 
   /* ────────────────────────── events ────────────────────────── */
@@ -1683,7 +1746,7 @@
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (!el || isTool(el) || el === document.body || el === document.documentElement) { hoverBox.style.display = 'none'; rulerLayer.style.display = 'none'; return; }
     showHover(el, el.getBoundingClientRect());
-    if (e.altKey && state.selected) drawRulers(el); else drawRulers(null);
+    if ((e.altKey || state.measure) && state.selected) drawRulers(el); else drawRulers(null);
   }
 
   function onDown(e) {
@@ -1704,7 +1767,7 @@
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (!el || el === document.body || el === document.documentElement) { select(null); return; }
     if (state.selected && (el === state.selected || state.selected.contains(el))) { startMoveDrag(e, el); return; }
-    if (e.altKey && state.selected && !el.contains(state.selected)) { startGapDrag(e, el); return; }
+    if ((e.altKey || state.measure) && state.selected && !el.contains(state.selected)) { startGapDrag(e, el); return; }
     select(el);
   }
 
@@ -1809,12 +1872,13 @@
 
   function onUp() {
     if (!state.drag) return;
-    const { r, shift, kind, target } = state.drag;
+    const { r, shift, kind, target, other } = state.drag;
     state.drag = null;
     document.body.style.userSelect = '';
     showGuides(null);
     if (r) finish(r, shift);
-    else if (kind === 'move' && target && target !== state.selected) select(target);   // a click, not a drag
+    else if (kind === 'move' && target) { if (target !== state.selected) select(target); else if (state.selected) showCrumbs(state.selected); }   // a click, not a drag; on the selection it restores the crumbs
+    else if (kind === 'gap' && state.drag === null && other) select(other);             // a click while measuring selects
   }
 
   function finish(r, exact) {
@@ -1836,22 +1900,15 @@
     }
     // Panel buttons keep focus after a click because page mousedowns are cancelled, so only text fields may swallow keys.
     if (isTool(e.target) && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
-    if (e.key === 'Escape') { select(null); return; }
-    if ((e.key === 'x' || e.key === 'X') && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); state.xray = !state.xray; drawXray(); setStatus(state.xray ? 'X-ray on: every container outlined. Press x to turn it off.' : (state.selected ? descriptor(state.selected) : idleStatus())); if (state.selected && !state.xray) showCrumbs(state.selected); return; }
+    if (e.key === 'Escape') { if (state.measure) toggleMeasure(); else select(null); return; }
+    if ((e.key === 'x' || e.key === 'X') && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleXray(); return; }
     if (!state.selected) return;
     if (!e.metaKey && !e.ctrlKey && !e.altKey) {
       if (e.key === 'p' || e.key === 'P') { e.preventDefault(); togglePin(); return; }
       if (e.key === 'm' || e.key === 'M') { e.preventDefault(); matchPin(); return; }
       if (e.key === 'a' || e.key === 'A') { e.preventDefault(); toggleSiblings(); return; }
     }
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      e.preventDefault();
-      state.notice = null;
-      const r = rec(state.selected); r.removed = true; apply(r);
-      finish(r); select(null);
-      if (state.notice) setStatus(state.notice);
-      return;
-    }
+    if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); removeSelected(); return; }
     // Option+ArrowUp climbs to the parent, which is the only way to reach a wrapper whose surface is all children.
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       e.preventDefault();
@@ -1959,6 +2016,7 @@
   // Sleeping discards previews, as closing does, so nothing invisible is left masking the real page.
   function sleep() {
     if (!state.awake) return;
+    state.measure = false;
     resetAll();
     pageListeners.forEach(([t, ev, fn]) => t.removeEventListener(ev, fn, true));
     headObserver.disconnect(); headTarget = null;
@@ -2012,6 +2070,7 @@
     $('nudge-close').addEventListener('click', (e) => { e.stopPropagation(); close(); });
     $('nudge-head').addEventListener('click', () => setCollapsed(!state.collapsed));
     $('nudge-vp').addEventListener('click', (e) => { e.stopPropagation(); state.bpLines = !state.bpLines; renderViewport(); });
+    $('nudge-xray').addEventListener('click', (e) => { e.stopPropagation(); toggleXray(); });
     FIELDS.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });
     rootObserver.observe(root, { childList: true });
     hookHistory();
@@ -2050,6 +2109,7 @@
       get bpLines() { return state.bpLines; },
       get xray() { return state.xray; },
       get pin() { return state.pin; },
+      get measure() { return state.measure; },
       get verdict() { return state.verdict; },
       els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot, bpLayer, xrayLayer, rulerLayer, hoverTag, pinBox },
     },

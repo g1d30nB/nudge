@@ -2,6 +2,15 @@
 
 Installed bookmarks are pinned to a release. To get a new release, reinstall the bookmark from the [install page](https://g1d30nb.github.io/nudge/).
 
+## Unreleased
+
+### Added
+
+- **Action row.** Under the panel header, the selection's own buttons, only the ones that apply: Pin or Unpin, Match when something is pinned, Siblings when the change has siblings to go to, Measure, Remove. The keys still work.
+- **Measure button.** Rulers and the gap drag without holding Option. Escape stops.
+- **x-ray button** in the header, beside the key.
+- The header crumbs name the pinned element, with a × to remove the pin.
+
 ## v1.3.0, 11 October 2026
 
 The biggest release since launch. Four areas: resizing, the responsive view, closing the loop with the agent, and saying what a change means. Every key and command is listed in the README under [Keys and commands](README.md#keys-and-commands).

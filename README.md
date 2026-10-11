@@ -241,14 +241,17 @@ Everything nudge does from the keyboard, with an element selected unless the row
 | Colour chips | Open a palette of the page's `:root` tokens; the picker underneath is for anything else. |
 | Option + hover | Measure the distance to another element, or the insets inside a parent. |
 | Option + drag another element | Change the gap between it and the selection. Previewed and reported through the rule that made the space. |
-| p | Pin the selection. Press again on the pin to remove it. |
-| m | Make the selection match the pinned element. |
-| a | Apply the selection's change to its siblings with the same tag and classes. Press again to release. |
-| x | Outline every container on the page (no selection needed). Press again to hide. |
+| p, or **Pin** | Pin the selection. Press again on the pin, or its ×, to remove it. |
+| m, or **Match** | Make the selection match the pinned element. |
+| a, or **Siblings** | Apply the selection's change to its siblings with the same tag and classes. Again to release. |
+| **Measure** | Rulers and the gap drag without holding Option. Escape stops. |
+| x, or **x-ray** in the header | Outline every container on the page (no selection needed). Again to hide. |
 | Header badge | Click to draw the page's breakpoint lines. |
 | Header crumbs | Click a step to select that ancestor. |
 | Header | Click to collapse the panel to one row; click again to expand. |
 | Escape | Deselect. |
+
+The row under the header holds the selection's own buttons, and only the ones that apply: **Pin** or **Unpin**, **Match** when something is pinned, **Siblings** when the element has a change and has siblings, **Measure**, **Remove**. The keys above do the same things.
 
 Buttons: **Copy for Claude Code** copies the unsent changes and marks them sent. It becomes **Clear preview** once everything is sent, which reverts the preview and reports what the page now shows of the batch. **Re-copy** copies the last batch again. **Reset** reverts everything. **×** closes.
 
