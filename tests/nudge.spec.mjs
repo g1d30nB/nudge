@@ -1383,3 +1383,27 @@ test('64 Option+ArrowUp selects the parent, Option+ArrowDown comes back down, ne
   await page.keyboard.press('Alt+ArrowDown');
   expect(await selectedIs(page, TAGLINE)).toBe(true);
 });
+
+/* ───────────── take(): the batch without the clipboard (check 65) ───────────── */
+
+test('65 take() returns the unsent batch, marks it sent, and returns null when nothing is new', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-11T10:00:00Z'));
+  await inject(page);
+  expect(await page.evaluate(() => window.__nudge.take())).toBeNull();
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 100);
+  const expected = await page.evaluate(() => window.__nudge.report(window.__nudge._state.changes.filter((r) => !r.sent)));
+  const taken = await page.evaluate(() => window.__nudge.take());
+  expect(taken).toBe(expected);
+  expect(taken).toContain('width 540px → 640px');
+  await expect(page.locator('#nudge-list [data-sent]')).toHaveCount(1);
+  await expect(page.locator('#nudge-status')).toHaveText(SENT);
+  await expect(page.locator('#nudge-copy')).toHaveText('Clear preview');
+  expect(await page.evaluate(() => window.__nudge.take())).toBeNull();
+  // A later change is a new batch of its own.
+  await select(page, '#rotated');
+  await page.keyboard.press('ArrowDown');
+  const second = await page.evaluate(() => window.__nudge.take());
+  expect(second).toContain('div#rotated');
+  expect(second).not.toContain('p.tagline');
+});
