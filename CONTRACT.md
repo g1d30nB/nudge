@@ -88,6 +88,11 @@ All pass/fail. No subjective checks.
 | 63 | Click selects, drag moves | With a section selected, a click on a paragraph inside it selects the paragraph and records nothing; a 2px wobble is still a click; a real drag from the same point moves the section and leaves it selected |
 | 64 | Select the parent | Option+ArrowUp from a paragraph selects its wrapper, then the section, and stops there rather than reaching body, saying so in the status. Option+ArrowDown retraces the path and stops at the start. A plain arrow still nudges. A fresh click clears the path |
 | 65 | take() | `window.__nudge.take()` returns null with nothing unsent; after a change it returns exactly `report(unsent)`, marks those changes sent (row ticked, status "Sent…", button "Clear preview"), then returns null again; a later change is a new batch on its own |
+| 66 | West handle | Dragging the left edge of a 360px card 100px left → width 460, dx −100, right edge unchanged; batch has `width 360px → 460px` and `moved left 100px` |
+| 67 | North and corner | Dragging the top edge up 40px → height +40, dy −40, bottom edge fixed. Dragging the north-west corner (−30, −20) → width +30, height +20, dx −30, dy −20, right and bottom edges fixed |
+| 68 | Command from the centre; handle click | Command-drag of the east handle +50 → width +100, dx −50, centre unchanged. A mouse-down and up on a handle without movement records nothing and keeps the selection |
+| 69 | Shift axis lock | A Shift-drag of (30, 8) records dx 30, dy 0; a following Shift-drag of (5, 40) keeps dx 30 and records dy 40 |
+| 70 | Size fields | Typing 517 and Enter sets width 517; three ArrowUps reach 520 and the batch names the width match with `.card-b`; ArrowUp in height adds 1. The size row shows for an image, where the type row does not |
 
 ## Test Plan
 
@@ -192,6 +197,12 @@ One existing check changed, by design: check 27 proved that a click without move
 ## take() (11 Oct 2026, branch feat/take, check 65)
 
 A Claude Code mod can load nudge into the built-in browser and read its batch back through the browser's JavaScript tool, but the clipboard is not available there, so Copy fails and nothing is marked sent. `take()` is Copy without the clipboard: it returns the unsent batch and marks it sent. The mod calls it and puts the text in the prompt box. 65/65.
+
+## Resize from any edge (11 Oct 2026, branch feat/resize-edges, checks 66–70)
+
+Eight handles. A start edge (west, north) changes size and position together: the batch already separates sizes from moves, so `width 360px → 460px` plus `moved left 100px` says it. `fitSize` takes the moving side, so the left and top edges snap too, and at release a start edge that moved is checked for alignment. Command resizes from the centre (both edges move, no snapping); Option or Control locks the ratio; Command no longer locks. Shift on a move locks the dominant axis as well as disabling snapping. Every drag, resize included, waits for 3px of movement before recording, so a click on a handle neither records nor clears a sent preview; with corner handles over the element's corners, check 27's padding click would otherwise have cleared its sent change. Width and height fields with steppers sit in their own row, shown for every selection, images included, because the type-and-colour section is hidden for images by check 37.
+
+First run: one failure, a test helper scoped to the wrong row, then one real: a focused size field did not update after a step. 70/70, stable over `--repeat-each 3`. No existing test changed.
 
 ## Expected first failures
 

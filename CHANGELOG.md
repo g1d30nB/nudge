@@ -6,6 +6,9 @@ Installed bookmarks are pinned to a release. To get a new release, reinstall the
 
 ### Added
 
+- **Resize from any edge.** Eight handles. Dragging the left or top edge moves that edge and the batch reports both the size and the move. Hold Command to resize from the centre.
+- **Width and height fields** in the panel, with steppers and snapping, for every selected element including images.
+- **Shift locks a move to one axis** as well as disabling snapping.
 - `window.__nudge.take()`: returns the unsent batch and marks it sent, without the clipboard. For tools that read the page from outside, such as the Claude Code mod.
 
 ## v1.2.1, 16 September 2026

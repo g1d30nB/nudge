@@ -1407,3 +1407,91 @@ test('65 take() returns the unsent batch, marks it sent, and returns null when n
   expect(second).toContain('div#rotated');
   expect(second).not.toContain('p.tagline');
 });
+
+/* ───────────── resize from any edge, size fields, axis lock (checks 66–70) ───────────── */
+
+const rec0 = (page) => page.evaluate(() => { const r = window.__nudge._state.changes[0]; return r ? { test: r.el.dataset.test || r.el.id, w: r.w, h: r.h, dx: r.dx, dy: r.dy } : null; });
+
+test('66 the west handle grows the box leftwards: width up, left edge moved, right edge fixed', async ({ page }) => {
+  await inject(page);
+  await select(page, CARD_A);
+  const b = await rect(page, CARD_A);
+  await drag(page, [b.left, b.cy], [b.left - 100, b.cy], { shift: true });
+  expect(await rec0(page)).toMatchObject({ w: 460, dx: -100, dy: 0 });
+  const after = await rect(page, CARD_A);
+  expect(Math.abs(after.right - b.right)).toBeLessThanOrEqual(1);
+  expect(Math.round(after.width)).toBe(460);
+  const text = await report(page);
+  expect(text).toContain('width 360px → 460px');
+  expect(text).toContain('moved left 100px');
+});
+
+test('67 the north handle and the north-west corner move the top and left edges', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=roomy]');
+  const b = await rect(page, '[data-test=roomy]');
+  await drag(page, [b.cx, b.top], [b.cx, b.top - 40], { shift: true });
+  expect(await rec0(page)).toMatchObject({ h: Math.round(b.height) + 40, dy: -40, dx: 0 });
+  let after = await rect(page, '[data-test=roomy]');
+  expect(Math.abs(after.bottom - b.bottom)).toBeLessThanOrEqual(1);
+  await page.locator('#nudge-reset').click();
+  await select(page, '[data-test=roomy]');
+  await drag(page, [b.left, b.top], [b.left - 30, b.top - 20], { shift: true });
+  expect(await rec0(page)).toMatchObject({ w: Math.round(b.width) + 30, h: Math.round(b.height) + 20, dx: -30, dy: -20 });
+  after = await rect(page, '[data-test=roomy]');
+  expect(Math.abs(after.right - b.right)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.bottom - b.bottom)).toBeLessThanOrEqual(1);
+});
+
+test('68 Command-drag resizes from the centre; a click on a handle records nothing', async ({ page }) => {
+  await inject(page);
+  await select(page, CARD_A);
+  const b = await rect(page, CARD_A);
+  await page.keyboard.down('Meta');
+  await drag(page, [b.right, b.cy], [b.right + 50, b.cy]);
+  await page.keyboard.up('Meta');
+  expect(await rec0(page)).toMatchObject({ w: 460, dx: -50 });
+  const after = await rect(page, CARD_A);
+  expect(Math.abs(after.cx - b.cx)).toBeLessThanOrEqual(1);
+  await page.locator('#nudge-reset').click();
+  await select(page, CARD_A);
+  const c = await rect(page, CARD_A);
+  await page.mouse.move(c.left, c.top); await page.mouse.down(); await page.mouse.up();   // the north-west handle
+  expect(await changes(page)).toHaveLength(0);
+  expect(await selectedIs(page, CARD_A)).toBe(true);
+});
+
+test('69 Shift locks a move to its dominant axis', async ({ page }) => {
+  await scrollWorkIntoView(page);
+  await inject(page);
+  await selectFig(page);
+  let f = await rect(page, FIG);
+  await drag(page, [f.cx, f.cy], [f.cx + 30, f.cy + 8], { shift: true });
+  expect(await rec0(page)).toMatchObject({ dx: 30, dy: 0 });
+  f = await rect(page, FIG);
+  await drag(page, [f.cx, f.cy], [f.cx + 5, f.cy + 40], { shift: true });
+  expect(await rec0(page)).toMatchObject({ dx: 30, dy: 40 });
+});
+
+const sizeField = (page, key) => page.locator(`#nudge-size input[data-prop="${key}"]`);
+
+test('70 width and height fields: typed values apply, steps snap to another element, height steps too', async ({ page }) => {
+  await inject(page);
+  await select(page, CARD_A);
+  await expect(sizeField(page, 'w')).toHaveValue('360');
+  await sizeField(page, 'w').fill('517');
+  await sizeField(page, 'w').press('Enter');
+  expect(await rec0(page)).toMatchObject({ w: 517 });
+  for (let i = 0; i < 3; i++) await sizeField(page, 'w').press('ArrowUp');
+  await expect(sizeField(page, 'w')).toHaveValue('520');
+  expect(await reportLines(page)).toContain('width matches width of section#cards > div.card.card-b "The wider card. Its width …ap targets for resize." (520px)');
+  const h0 = Number(await sizeField(page, 'h').inputValue());
+  await sizeField(page, 'h').press('ArrowUp');
+  await expect(sizeField(page, 'h')).toHaveValue(String(h0 + 1));
+  expect(await rec0(page)).toMatchObject({ w: 520, h: h0 + 1 });
+  // The size row shows for an image too, where the type row does not.
+  await select(page, '[data-test=logo]');
+  await expect(page.locator('#nudge-size')).toBeVisible();
+  await expect(page.locator('#nudge-props')).toBeHidden();
+  await expect(sizeField(page, 'w')).toHaveValue('320');
+});
