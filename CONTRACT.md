@@ -103,6 +103,11 @@ All pass/fail. No subjective checks.
 | 78 | X-ray | Pressing x outlines every container in view (`#hero`, `.hero-text` among them) and says so in the status; pressing x again removes them; the hint names it |
 | 79 | Component names | With a React fiber chain on an element whose nearest named component is `Hero`, the batch labels it `in <Hero>`; a Vue 3 `__vueParentComponent` with `__name: 'PricingCard'` gives `in <PricingCard>`; an element with neither has no `in <…>` |
 | 80 | Rulers | With card-a selected, Option-hover on card-b draws one ruler reading `24` between them; Option-hover on the section draws four insets, `40`, `880`, `40`, `144` at 1280 wide; releasing Option hides them |
+| 81 | Pin and match | p on card-b pins it (dashed box); m on card-a sets its width to 520 and the batch reads `make this match … card-b …: width`, `width matches width of … (520px)` and the match footer; p on the pin again removes it. Pinning `.type-lede` and pressing m on `.type-target` gives `font size 17px → 21px (now matches .type-lede)` and `line height 25.5px → 30px …` with `make this match …: font size, line height` |
+| 82 | Apply to siblings | Resizing item-1 to 300 and pressing a sets item-2 and item-3 to 300 inline, leaves the `p.item-note` alone, and the batch reads `apply the same to its 2 siblings (3 × div.item in total)` with the siblings footer; a again releases them; undo on the record restores them |
+| 83 | Guardrails | Text colour set to `--surface` on `.ink-text` puts `contrast 1.0:1 after this change, below the 4.5:1 AA minimum for this text size` in the status and the batch; font size 11 on `.type-target` gives `font size 11px is below 12px, small for body text` |
+| 84 | History and re-copy | `history()` is empty, holds the first batch's text after Copy, and two entries after a second; the second Re-copy press says `Copied again (2×)` and how to paste |
+| 85 | Gap drag | With card-a selected, an Option-drag of card-b down 16px sets `row-gap: 40px` inline on `#cards`, records no move, shows the `40` ruler during the drag, and the batch reads `gap to … card-a … 24px → 40px (set by row-gap 24px on section#cards)` with the gap footer; undo clears the inline gap. With stack-a selected, an Option-drag of stack-b down 10px sets `margin-top: 30px` inline on stack-b and the batch reads `… 20px → 30px (set by margin-top 20px on this element)`; after `take()` and a reload with the margin applied in CSS, verify reports `1 of 1 applied` |
 
 ## Test Plan
 
@@ -221,6 +226,16 @@ A batch measured at one width said nothing about the others. nudge now reads the
 Verify closes the loop. Sending a batch records what the page should measure once applied, in sessionStorage; after a reload, or when the preview is cleared, nudge measures again and reports what was applied and what was not, naming the value now and the value wanted. The Claude Code mod runs the same check after the turn that applied a batch and prints the verdict beneath the answer; `/nudge verify` runs it on demand and `/nudge at 390` resizes the pane.
 
 First run: three failures, all in the new tests (a line check made before the resize event had fired, and two snippets quoted from memory). 75/75, stable over `--repeat-each 3`. No existing test changed.
+
+## Reach (11 Oct 2026, branch feat/reach, checks 76–80)
+
+Finding and naming things. The status line shows the selection's ancestry as clickable crumbs, which replaces the hunt for a wrapper; the hover box names what the pointer is over and its size; x outlines every container in view. Labels name the component that rendered the element where React or Vue dev internals leave it readable, which was issue #10; Svelte and Astro leave nothing, so those stay on the selector path. With an element selected, Option-hover on another draws the distance between them, or the insets inside a parent. 80/80, first run clean after four wrong expectations in the new tests. No existing test changed; check 64's status assertion holds because the crumbs' text still reads as the descriptor.
+
+## Intent (11 Oct 2026, branch feat/intent, checks 81–85)
+
+Saying what a change means. p pins an element and m gives the selection the pin's values through the ordinary setters, so the batch reads as a hand match plus one line naming the intent; text elements take only type and colour, since a paragraph's box is its content. a extends a record to the siblings that share its tag and classes, and the batch says the change belongs on their shared rule. Guardrails: a colour change that leaves text under AA contrast against its background, and a font size under 12px, are said in the status and the batch. Re-copy twice says how to paste. `history()` keeps every batch sent this page load. The gap gesture (issue #14) is Option-drag on the other element: the preview edits the rule that produced the space, the parent's gap or the larger facing margin, and the batch names that rule; verify measures the gap after a reload. The mod gained `/nudge batch send`, `/nudge dark`, `/nudge light`, `/nudge history`, and reloads nudge after the pane navigates.
+
+86/86 (85 and 85b), stable over `--repeat-each 3`. First run clean. Not done: a screenshot in the batch (the mod cannot attach an image to a prompt), reduced-motion emulation (the browser tool has no switch for it), pins with notes (the batch is the note).
 
 ## Expected first failures
 

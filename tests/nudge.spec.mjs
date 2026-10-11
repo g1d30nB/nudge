@@ -1710,3 +1710,153 @@ test('80 Option-hover measures the gap to another element, or the insets inside 
   await page.mouse.move(sec.right - 12, sec.cy);
   expect(await rulers(page)).toEqual([]);
 });
+
+/* ───────────── intent: pin and match, siblings, guardrails, history (checks 81–84) ───────────── */
+
+const typeInto = async (page, field, value) => { await field.fill(value); await field.press('Enter'); };
+const pinOver = (page, sel) => page.evaluate((s) => { const p = window.__nudge._state.els.pinBox; if (getComputedStyle(p).display === 'none') return false; const b = document.querySelector(s).getBoundingClientRect(); return p.style.left === b.left + 'px' && p.style.width === b.width + 'px'; }, sel);
+
+test('81 p pins an element and m makes the selection match it: size, then type', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=card-b]');
+  await page.keyboard.press('p');
+  expect(await pinOver(page, '[data-test=card-b]')).toBe(true);
+  await expect(status(page)).toContainText('Pinned section#cards > div.card.card-b');
+  await select(page, '[data-test=card-a]');
+  await page.keyboard.press('m');
+  expect((await changes(page))[0].w).toBe(520);
+  await expect(status(page)).toContainText('matched width to section#cards > div.card.card-b');
+  let lines = await reportLines(page);
+  expect(lines.some((l) => /^make this match section#cards > div\.card\.card-b ".*": width$/.test(l))).toBe(true);
+  expect(lines.some((l) => /^width matches width of section#cards > div\.card\.card-b .*\(520px\)$/.test(l))).toBe(true);
+  expect(lines).toContain(`A "make this match" change should share the matched element's rule, class or token rather than copy its values.`);
+  await select(page, '[data-test=card-b]');
+  await page.keyboard.press('p');
+  expect(await page.evaluate(() => window.__nudge._state.pin)).toBeNull();
+  await page.locator('#nudge-reset').click();
+  await select(page, '[data-test=lede]');
+  await page.keyboard.press('p');
+  await select(page, '[data-test=type]');
+  await page.keyboard.press('m');
+  lines = await reportLines(page);
+  expect(lines.some((l) => /^make this match section#typeset > p\.type-lede ".*": font size, line height$/.test(l))).toBe(true);
+  expect(lines).toContain('font size 17px → 21px (now matches .type-lede)');
+  expect(lines).toContain('line height 25.5px → 30px, 1.5 → 1.43 × font size (now matches .type-lede)');
+});
+
+test('82 a applies a change to the siblings that share tag and classes, and releases them again', async ({ page }) => {
+  await inject(page);
+  const widths = () => page.evaluate(() => ['item-1', 'item-2', 'item-3', 'item-note'].map((t) => document.querySelector(`[data-test=${t}]`).style.width));
+  await select(page, '[data-test=item-1]');
+  await typeInto(page, sizeField(page, 'w'), '300');
+  await select(page, '[data-test=item-1]');          // a page click takes focus back from the field
+  await page.keyboard.press('a');
+  expect(await widths()).toEqual(['300px', '300px', '300px', '']);
+  await expect(status(page)).toContainText('+2 siblings');
+  const lines = await reportLines(page);
+  expect(lines).toContain('apply the same to its 2 siblings (3 × div.item in total)');
+  expect(lines).toContain('A change applied to siblings belongs on their shared rule or component, not on each instance.');
+  await page.keyboard.press('a');
+  expect(await widths()).toEqual(['300px', '', '', '']);
+  await page.keyboard.press('a');
+  expect(await widths()).toEqual(['300px', '300px', '300px', '']);
+  await page.locator('#nudge-list button', { hasText: 'undo' }).click();
+  expect(await widths()).toEqual(['', '', '', '']);
+  expect(await changes(page)).toHaveLength(0);
+});
+
+test('83 the batch warns when a colour change fails AA contrast or a font size drops below 12px', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=ink]');
+  await chip(page, 'color').click();
+  await swatch(page, '--surface').click();
+  const warn = 'contrast 1.0:1 after this change, below the 4.5:1 AA minimum for this text size';
+  await expect(status(page)).toContainText(warn);
+  expect(await reportLines(page)).toContain(warn);
+  await page.locator('#nudge-reset').click();
+  await select(page, '[data-test=type]');
+  await typeInto(page, typeField(page, 'fontSize'), '11');
+  const small = 'font size 11px is below 12px, small for body text';
+  await expect(status(page)).toContainText(small);
+  expect(await reportLines(page)).toContain(small);
+  await select(page, '[data-test=card-a]');
+  await resizeE(page, '[data-test=card-a]', 20);
+  expect((await reportLines(page)).filter((l) => /contrast|below 12px/.test(l))).toEqual([small]);
+});
+
+test('84 history keeps every batch sent, and a second Re-copy says how to paste', async ({ page }) => {
+  await inject(page);
+  expect(await page.evaluate(() => window.__nudge.history())).toEqual([]);
+  await select(page, '[data-test=card-a]');
+  await resizeE(page, '[data-test=card-a]', 20);
+  const first = await report(page);
+  await copyAndSettle(page);
+  const h1 = await page.evaluate(() => window.__nudge.history());
+  expect(h1).toHaveLength(1);
+  expect(h1[0].batch).toBe(1);
+  expect(h1[0].text).toBe(first);
+  await page.locator('#nudge-recopy').click();
+  await expect(status(page)).toHaveText('Copied again. Clear the preview once your agent has applied it.');
+  await page.locator('#nudge-recopy').click();
+  await expect(status(page)).toHaveText('Copied again (2×). If the agent is not applying it, paste the batch as the whole message, with nothing before it.');
+  await select(page, '[data-test=card-b]');
+  await page.keyboard.press('ArrowRight');
+  await copyAndSettle(page);
+  const h2 = await page.evaluate(() => window.__nudge.history());
+  expect(h2.map((h) => h.batch)).toEqual([1, 2]);
+  await page.locator('#nudge-recopy').click();
+  await expect(status(page)).toHaveText('Copied again. Clear the preview once your agent has applied it.');
+});
+
+/* ───────────── gap drag (check 85) ───────────── */
+
+async function altDrag(page, from, to, { steps = 10 } = {}) {
+  await page.keyboard.down('Alt');
+  await page.mouse.move(from[0], from[1]);
+  await page.mouse.down();
+  await page.mouse.move(to[0], to[1], { steps });
+  const mid = await rulers(page);
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  return mid;
+}
+
+test('85 Option-drag on another element changes the gap between them, through the rule that made it', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=card-a]');
+  const b = await rect(page, '[data-test=card-b]');
+  const mid = await altDrag(page, [b.cx, b.cy], [b.cx, b.cy + 16]);
+  expect(mid).toEqual(['40']);
+  expect(await page.evaluate(() => document.querySelector('#cards').style.rowGap)).toBe('40px');
+  const recs = await changes(page);
+  expect(recs).toHaveLength(1);
+  expect(recs[0].dx).toBe(0); expect(recs[0].dy).toBe(0);
+  let lines = await reportLines(page);
+  expect(lines.some((l) => /^gap to section#cards > div\.card\.card-a ".*" 24px → 40px \(set by row-gap 24px on section#cards\)$/.test(l))).toBe(true);
+  expect(lines.some((l) => l.startsWith('moved'))).toBe(false);
+  expect(lines).toContain(`A gap change edits the rule that produced the space, named on its line, not the element's position.`);
+  await page.locator('#nudge-list button', { hasText: 'undo' }).click();
+  expect(await page.evaluate(() => document.querySelector('#cards').style.rowGap)).toBe('');
+  // Margins: the larger facing margin owns the space.
+  await select(page, '[data-test=stack-a]');
+  const sb = await rect(page, '[data-test=stack-b]');
+  await altDrag(page, [sb.cx, sb.cy], [sb.cx, sb.cy + 10]);
+  expect(await page.evaluate(() => document.querySelector('[data-test=stack-b]').style.marginTop)).toBe('30px');
+  lines = await reportLines(page);
+  expect(lines.some((l) => /^gap to section#stack > div\.stack-a ".*" 20px → 30px \(set by margin-top 20px on this element\)$/.test(l))).toBe(true);
+});
+
+test('85b a gap change is verified after a reload', async ({ page }) => {
+  const origin = 'http://localhost:4173';
+  const patch = await serveMutable(page, origin);
+  await page.evaluate(() => window.__nudge.wake());
+  await select(page, '[data-test=stack-a]');
+  const sb = await rect(page, '[data-test=stack-b]');
+  await altDrag(page, [sb.cx, sb.cy], [sb.cx, sb.cy + 10]);
+  expect(await page.evaluate(() => window.__nudge.take())).toContain('20px → 30px');
+  await page.reload();
+  expect((await page.evaluate(() => window.__nudge.verify('reload'))).text).toContain('0 of 1 applied');
+  patch.css = '.stack-b { margin-top: 30px; }';
+  await page.reload();
+  expect((await page.evaluate(() => window.__nudge.verify('reload'))).text).toBe('After the reload: 1 of 1 applied.');
+});

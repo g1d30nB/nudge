@@ -12,6 +12,12 @@ Installed bookmarks are pinned to a release. To get a new release, reinstall the
 - `window.__nudge.take()`: returns the unsent batch and marks it sent, without the clipboard. For tools that read the page from outside, such as the Claude Code mod.
 - **Breakpoints.** nudge reads the page's width breakpoints from its stylesheets. A badge on the panel header shows the window width and the range it falls in; click it to draw the breakpoint lines on the page. The batch says which range it was measured in, and an element with rules at other widths gets a line saying where.
 - **Verify.** Sending a batch records what the page should measure once it is applied. After a reload, or when the preview is cleared, nudge measures again and reports what was applied and what was not. `window.__nudge.verify()` runs the check on demand.
+- **Crumbs, hover tag, x-ray.** The panel header shows the selection's ancestry, each step clickable. The hover box names the element and its size. `x` outlines every container in view.
+- **Component names.** Where React or Vue dev internals name the component that rendered an element, the batch adds `in <Hero>` (issue #10).
+- **Measure and set the gap.** Option-hover shows the distance between the selection and another element. Option-drag changes it, previewed through the rule that made the space, which the batch names (issue #14).
+- **Pin and match.** `p` pins an element, `m` makes the selection match it. **Apply to siblings** with `a`.
+- **Guardrails.** The batch flags a colour change that fails AA contrast, with the ratio, and a font size under 12px.
+- `window.__nudge.history()` returns every batch sent this page load. A second Re-copy says how to paste.
 
 ## v1.2.1, 16 September 2026
 
