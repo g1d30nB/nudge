@@ -10,6 +10,8 @@ Installed bookmarks are pinned to a release. To get a new release, reinstall the
 - **Width and height fields** in the panel, with steppers and snapping, for every selected element including images.
 - **Shift locks a move to one axis** as well as disabling snapping.
 - `window.__nudge.take()`: returns the unsent batch and marks it sent, without the clipboard. For tools that read the page from outside, such as the Claude Code mod.
+- **Breakpoints.** nudge reads the page's width breakpoints from its stylesheets. A badge on the panel header shows the window width and the range it falls in; click it to draw the breakpoint lines on the page. The batch says which range it was measured in, and an element with rules at other widths gets a line saying where.
+- **Verify.** Sending a batch records what the page should measure once it is applied. After a reload, or when the preview is cleared, nudge measures again and reports what was applied and what was not. `window.__nudge.verify()` runs the check on demand.
 
 ## v1.2.1, 16 September 2026
 
