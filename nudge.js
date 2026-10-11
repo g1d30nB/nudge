@@ -837,6 +837,20 @@
     setTimeout(() => { state.copyLock = false; render(); }, 900);
   }
 
+  // Hands the unsent batch to a caller that is not the clipboard (Claude Code's own mod reads it through the
+  // browser), and marks those changes sent exactly as Copy does. Returns null when there is nothing new.
+  function take() {
+    const recs = unsentRecs();
+    if (!recs.length) return null;
+    const text = report(recs);
+    state.batch++;
+    recs.forEach((r) => { r.sent = true; r.sentBatch = state.batch; r.sentSeq = state.reloadSeq; });
+    state.notice = null;
+    render();
+    setStatus(SENT);
+    return text;
+  }
+
   async function recopy() {
     let recs = sentRecs().filter((r) => r.sentBatch === state.batch);
     if (!recs.length) recs = sentRecs();
@@ -1367,7 +1381,7 @@
   if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount, { once: true });
 
   window.__nudge = {
-    destroy, wake, sleep, toggle, close, report,
+    destroy, wake, sleep, toggle, close, report, take,
     // Test hook. Read-only view of internal state; no behavioural effect.
     _state: {
       get selected() { return state.selected; },

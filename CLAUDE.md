@@ -72,6 +72,7 @@ Runs `node --check nudge.js` then the Playwright suite. 30/30 as of 15 Sep 2026,
 - Panel width is `min(360px, calc(100vw - 32px))` so it stays on screen in narrow panes. The width itself in narrow viewports is an open issue.
 - The panel collapses on a header click to its header and buttons, with a change-count badge. Only the user toggles it; nothing collapses or expands the panel on its own. Collapsed state persists across sleep and wake within a page load. The reload warning stays visible when collapsed.
 - The panel is anchored to the bottom, so any element appearing inside it moves everything above it upward. Anything that toggles near a control the pointer may be on (the type match line) must reserve its space and toggle `visibility`, not `display`.
+- `window.__nudge.take()` is Copy without the clipboard: returns the unsent batch and marks it sent, for callers that read the page from outside (the Claude Code mod through the browser's JavaScript tool, where the clipboard is unavailable). Null when nothing is unsent.
 - Copy serialises final state only, not history. One line per touched element.
 - Snap detection runs during drag (guides) and again on release with 1px tolerance to record relationships. Relationships are the point: "bottom aligned with X" beats "moved 412px".
 - The batch text instructs the agent: aligned moves become layout rules (align-self, margin auto, grid), unaligned moves become margin/gap, no transforms, no inline styles, keep widths responsive.

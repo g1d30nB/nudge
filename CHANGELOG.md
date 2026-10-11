@@ -2,6 +2,12 @@
 
 Installed bookmarks are pinned to a release. To get a new release, reinstall the bookmark from the [install page](https://g1d30nb.github.io/nudge/).
 
+## Unreleased
+
+### Added
+
+- `window.__nudge.take()`: returns the unsent batch and marks it sent, without the clipboard. For tools that read the page from outside, such as the Claude Code mod.
+
 ## v1.2.1, 16 September 2026
 
 ### Added
