@@ -60,6 +60,10 @@
     verdict: null,          // after a reload or a cleared preview: what the agent applied of the last batch
     expect: null,           // the last sent batch's expected measurements, mirrored in sessionStorage
     xray: false,            // outlines on every container, to find wrappers that have no surface of their own
+    pin: null,              // the element "m" matches the selection to
+    matching: false,        // true while matchPin drives the setters, so they keep the match note
+    history: [],            // every batch sent this page load: { batch, at, text }
+    recopies: 0,            // Re-copy presses since the last batch, for the nudge when a paste keeps failing
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -73,6 +77,9 @@
     colour: 'A colour change names a design token: use that token. A value with no token is a question for the design system, not an instruction to hard-code it.',
     text: 'A text change replaces the old string with the new one wherever that copy lives: markup, a component, a content file or a translation.',
     removals: 'Removals delete the element from the markup.',
+    match: 'A "make this match" change should share the matched element\'s rule, class or token rather than copy its values.',
+    gap: 'A gap change edits the rule that produced the space, named on its line, not the element\'s position.',
+    siblings: 'A change applied to siblings belongs on their shared rule or component, not on each instance.',
     responsive: 'Where an element has different rules at other widths, change the rule for the range it was measured in unless the intent clearly applies everywhere.',
   };
 
@@ -226,6 +233,150 @@
     el.style.display = r.removed ? 'none' : o.display;
     TYPE.forEach((d) => { const t = r.type[d.key]; el.style[d.key] = t ? fmt(t.to) + d.unit : o[d.key]; });
     COLOUR.forEach((d) => { const c = r.colour[d.key]; el.style[d.key] = c ? c.css : o[d.key]; });
+    if (r.gap) r.gap.target.style[r.gap.prop] = px(r.gap.propFrom + (r.gap.to - r.gap.from));
+    syncSiblings(r);
+  }
+
+  /* ────────────────────────── gap ────────────────────────── */
+
+  // Option-drag on another element, with one selected, changes the space between them rather than moving
+  // either. The preview edits the rule that produced the space, which is what the agent will edit: the
+  // parent's gap when both are children of a flex or grid parent, else the larger of the two facing margins.
+  // When neither exists the dragged element's facing margin stands in, and the batch says so.
+  function gapBetween(a, b) {
+    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    const gx = Math.max(ra.left, rb.left) - Math.min(ra.right, rb.right);
+    const gy = Math.max(ra.top, rb.top) - Math.min(ra.bottom, rb.bottom);
+    if (gx <= 0 && gy <= 0) return null;
+    const axis = gx > 0 && (gy <= 0 || gx >= gy) ? 'x' : 'y';
+    const after = axis === 'x' ? rb.left >= ra.right : rb.top >= ra.bottom;   // b sits after a along the axis
+    return { axis, after, value: axis === 'x' ? gx : gy };
+  }
+  function gapSource(a, b, axis, after) {
+    const p = b.parentElement;
+    if (p && a.parentElement === p && /flex|grid/.test(cs(p).display)) {
+      const prop = axis === 'x' ? 'columnGap' : 'rowGap';
+      const v = parseFloat(cs(p)[prop]) || 0;
+      return { target: p, prop, propFrom: v, text: `set by ${axis === 'x' ? 'column-gap' : 'row-gap'} ${rnd(v)}px on ${descriptor(p)}` };
+    }
+    const bProp = axis === 'x' ? (after ? 'marginLeft' : 'marginRight') : (after ? 'marginTop' : 'marginBottom');
+    const aProp = axis === 'x' ? (after ? 'marginRight' : 'marginLeft') : (after ? 'marginBottom' : 'marginTop');
+    const bv = parseFloat(cs(b)[bProp]) || 0, av = parseFloat(cs(a)[aProp]) || 0;
+    const css = (k) => k.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase());
+    if (bv >= av && bv > 0) return { target: b, prop: bProp, propFrom: bv, text: `set by ${css(bProp)} ${rnd(bv)}px on this element` };
+    if (av > 0) return { target: a, prop: aProp, propFrom: av, text: `set by ${css(aProp)} ${rnd(av)}px on ${descriptor(a)}` };
+    return { target: b, prop: bProp, propFrom: 0, text: `no gap or margin found, previewed as ${css(bProp)} on this element; the space may be padding on a wrapper` };
+  }
+  function startGapDrag(e, other) {
+    const g = gapBetween(state.selected, other);
+    if (!g) { setStatus('These two overlap; there is no gap between them to drag.'); return; }
+    startDrag(e, { kind: 'gap', other, axis: g.axis, after: g.after, gap0: g.value });
+  }
+
+  // "a" extends a record to the siblings that share its tag and classes: the same size, type and colour
+  // values, never a move or a text edit. Each sibling keeps its own inline values for the properties the
+  // record leaves alone, and gets them back when the record goes.
+  const SIB_PROPS = ['width', 'maxWidth', 'height', 'maxHeight', 'display', 'fontSize', 'lineHeight', 'letterSpacing', 'fontWeight', 'color', 'backgroundColor'];
+  const siblingsOf = (el) => {
+    const p = el.parentElement; if (!p) return [];
+    const cls = [...el.classList].sort().join(' ');
+    return [...p.children].filter((x) => x !== el && !isTool(x) && x.tagName === el.tagName && [...x.classList].sort().join(' ') === cls);
+  };
+  function syncSiblings(r) {
+    if (!r.also) return;
+    const on = { width: r.w != null, maxWidth: r.w != null, height: r.h != null, maxHeight: r.h != null, display: r.removed };
+    TYPE.forEach((d) => { on[d.key] = !!r.type[d.key]; }); COLOUR.forEach((d) => { on[d.key] = !!r.colour[d.key]; });
+    r.also.forEach(({ el: x, orig }) => SIB_PROPS.forEach((k) => { x.style[k] = on[k] ? r.el.style[k] : orig[k]; }));
+  }
+  function releaseSiblings(r) {
+    if (!r.also) return;
+    r.also.forEach(({ el: x, orig }) => SIB_PROPS.forEach((k) => { x.style[k] = orig[k]; }));
+    r.also = null;
+  }
+  function toggleSiblings() {
+    const el = state.selected, r = state.changes.get(el);
+    if (!r || isNoop(r) || r.removed) { setStatus('Change this element first, then press a to apply the same to its siblings.'); return; }
+    if (r.also) { releaseSiblings(r); render(); setStatus(withNotice(summary(r))); return; }
+    const sibs = siblingsOf(el);
+    if (!sibs.length) { setStatus('No sibling shares this element\'s tag and classes.'); return; }
+    r.also = sibs.map((x) => { const orig = {}; SIB_PROPS.forEach((k) => { orig[k] = x.style[k]; }); return { el: x, orig }; });
+    syncSiblings(r); render(); updateBoxes();
+    setStatus(withNotice(summary(r)));
+  }
+
+  /* ────────────────────────── match a pinned element ────────────────────────── */
+
+  // "p" pins the selection; "m" on another element gives it the pin's width, height, type and colours,
+  // through the same setters a hand change uses, so the batch reads as it would after matching by hand,
+  // plus one line naming the intent.
+  const isTextEl = (el) => /^(P|H[1-6]|SPAN|A|LI|LABEL|SMALL|STRONG|EM|B|I|BLOCKQUOTE|FIGCAPTION|DT|DD|TD|TH|LEGEND|SUMMARY)$/.test(el.tagName) && ownText(el);
+  function togglePin() {
+    const el = state.selected;
+    state.pin = state.pin === el ? null : el;
+    updatePin();
+    setStatus(state.pin ? `Pinned ${descriptor(el)}. Select another element and press m to match it.` : 'Pin removed.');
+  }
+  function updatePin() {
+    if (state.pin && document.contains(state.pin) && state.awake) place(pinBox, state.pin.getBoundingClientRect());
+    else { if (!document.contains(state.pin)) state.pin = null; pinBox.style.display = 'none'; }
+  }
+  function matchPin() {
+    const el = state.selected, pin = state.pin;
+    if (!pin) { setStatus('Nothing pinned. Select the element to copy from and press p.'); return; }
+    if (pin === el) { setStatus('That is the pinned element. Select the one to change and press m.'); return; }
+    const pb = pin.getBoundingClientRect(), eb = el.getBoundingClientRect(), pc = cs(pin), ec = cs(el);
+    const props = [];
+    // A paragraph's box is its content, so for text elements only type and colour are matched; a card, an
+    // image or a wrapper takes the pin's size as well.
+    const sizes = !isTextEl(el);
+    state.matching = true;
+    try {
+      if (sizes && Math.abs(pb.width - eb.width) >= 0.5) { setSize(SIZE[0], pb.width, 'typed'); props.push('width'); }
+      if (sizes && Math.abs(pb.height - eb.height) >= 0.5) { setSize(SIZE[1], pb.height, 'typed'); props.push('height'); }
+      if (ownText(el) && ownText(pin)) {
+        const pt = readType(pc);
+        TYPE.forEach((d) => {
+          const r = state.changes.get(el);
+          const cur = r && r.baseType ? typeFrom(r, d) : readType(ec)[d.key];
+          if (pt[d.key] != null && cur != null && Math.abs(pt[d.key] - cur) >= 0.005) { setType(d, pt[d.key], 'typed'); props.push(d.name); }
+        });
+        const fg = toRGBA(pc.color);
+        if (fg && !sameRGBA(fg, toRGBA(ec.color))) { setColour(COLOUR[0], { hex: hexOf(fg) }); props.push('colour'); }
+      }
+      const bg = toRGBA(pc.backgroundColor);
+      if (bg && bg[3] > 0 && !sameRGBA(bg, toRGBA(ec.backgroundColor))) { setColour(COLOUR[1], { hex: hexOf(bg) }); props.push('background'); }
+    } finally { state.matching = false; }
+    const r = state.changes.get(el);
+    if (!props.length || !r) { setStatus(`Already matches ${descriptor(pin)}.`); return; }
+    r.matched = { el: pin, props };
+    render();
+    setStatus(withNotice(`matched ${props.join(', ')} to ${descriptor(pin)}`));
+  }
+
+  /* ────────────────────────── guardrails ────────────────────────── */
+
+  // Two checks an agent would not make from the numbers alone: text that became too small, and a colour
+  // change that left the text below WCAG AA contrast against the background it sits on.
+  const luminance = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  function effectiveBg(el) {
+    for (let cur = el; cur; cur = cur.parentElement) { const c = toRGBA(cs(cur).backgroundColor); if (c && c[3] >= 128) return c; }
+    return [255, 255, 255, 255];
+  }
+  function guardLines(r) {
+    const out = [], el = r.el;
+    if (r.removed || !ownText(el)) return out;
+    const c = cs(el), fs = parseFloat(c.fontSize);
+    if (r.type.fontSize && fs < 12) out.push(`font size ${fmt(fs)}px is below 12px, small for body text`);
+    if (r.colour.color || r.colour.backgroundColor) {
+      const fg = toRGBA(c.color), bg = effectiveBg(el);
+      if (fg && bg) {
+        const large = fs >= 24 || (parseInt(c.fontWeight, 10) >= 700 && fs >= 18.66), need = large ? 3 : 4.5;
+        const ratio = contrast(fg, bg);
+        if (ratio < need) out.push(`contrast ${ratio.toFixed(1)}:1 after this change, below the ${need}:1 AA minimum for this text size`);
+      }
+    }
+    return out;
   }
 
   /* ────────────────────────── type ────────────────────────── */
@@ -313,10 +464,12 @@
     const base = r.baseType[d.key];
     if (base != null && Math.abs(v - base) < 0.005) delete r.type[d.key];
     else r.type[d.key] = { to: v, match };
+    if (!state.matching) r.matched = null;
     apply(r); prune(r); render(); updateBoxes();
     if (match) place(matchBox, match.getBoundingClientRect()); else matchBox.style.display = 'none';
     renderProps();
-    setStatus(withNotice(summary(r) || descriptor(el)));
+    const guard = guardLines(r);
+    setStatus(withNotice(guard.length ? `${guard[0]} · ${summary(r)}` : (summary(r) || descriptor(el))));
   }
 
   // Computed line height is always in pixels even when the source is unitless, so give the ratio too.
@@ -419,8 +572,10 @@
     }
     const unchanged = sameRGBA(next.rgba, base.rgba) && (base.names.length <= 1 || next.names.length !== 1);
     if (unchanged) delete r.colour[d.key]; else r.colour[d.key] = next;
+    if (!state.matching) r.matched = null;
     apply(r); prune(r); render(); updateBoxes(); renderProps();
-    setStatus(withNotice(summary(r) || descriptor(el)));
+    const guard = guardLines(r);
+    setStatus(withNotice(guard.length ? `${guard[0]} · ${summary(r)}` : (summary(r) || descriptor(el))));
   }
 
   function colourLine(r, d) {
@@ -444,11 +599,12 @@
     return null;
   }
 
-  function isNoop(r) { return !r.dx && !r.dy && r.w == null && r.h == null && !r.removed && r.text == null && !Object.keys(r.type).length && !Object.keys(r.colour).length; }
+  function isNoop(r) { return !r.dx && !r.dy && r.w == null && r.h == null && !r.removed && r.text == null && !r.gap && !Object.keys(r.type).length && !Object.keys(r.colour).length; }
 
   function prune(r) {
     if (!isNoop(r)) return;
     r.el.style.transition = r.orig.transition;
+    releaseSiblings(r);
     state.changes.delete(r.el);
   }
 
@@ -461,6 +617,8 @@
     el.style.display = o.display; el.style.transition = o.transition;
     TYPE.forEach((d) => { el.style[d.key] = o[d.key]; });
     COLOUR.forEach((d) => { el.style[d.key] = o[d.key]; });
+    if (r.gap) { r.gap.target.style[r.gap.prop] = r.gap.origInline; r.gap = null; }
+    releaseSiblings(r);
     state.changes.delete(el);
   }
 
@@ -792,6 +950,7 @@
     if (r.dx) item.checks.left = rnd(b.left + scrollX);
     if (r.dy) item.checks.top = rnd(b.top + scrollY);
     if (r.text != null) item.checks.text = collapse(r.text);
+    if (r.gap) item.checks.gap = { other: pathTo(r.gap.other), to: r.gap.to };
     VERIFY_KEYS.forEach((k) => { if ((r.type && r.type[k]) || (r.colour && r.colour[k])) item.checks[k] = c[k]; });
     return item;
   }
@@ -836,6 +995,12 @@
     if (c.left != null && !near(b.left + scrollX, c.left)) miss.push(`left edge is at ${rnd(b.left + scrollX)}px, wanted ${c.left}px`);
     if (c.top != null && !near(b.top + scrollY, c.top)) miss.push(`top edge is at ${rnd(b.top + scrollY)}px, wanted ${c.top}px`);
     if (c.text != null && collapse(el.innerText) !== c.text) miss.push(`text is still "${trunc(collapse(el.innerText))}"`);
+    if (c.gap) {
+      let other = null; try { other = document.querySelector(c.gap.other); } catch (_) { other = null; }
+      const g = other && gapBetween(other, el);
+      if (!g) miss.push('the other element of the gap was not found');
+      else if (!near(g.value, c.gap.to)) miss.push(`gap is ${rnd(g.value)}px, wanted ${c.gap.to}px`);
+    }
     VERIFY_KEYS.forEach((k) => { if (c[k] != null && !sameValue(k, s[k], c[k])) miss.push(`${k.replace(/[A-Z]/g, (m) => ' ' + m.toLowerCase())} is ${s[k]}, wanted ${c[k]}`); });
     return { name: it.name, ok: !miss.length, why: miss.join('; ') };
   }
@@ -880,6 +1045,8 @@
   const bpLayer  = mk('position:fixed;inset:0;display:none;');
   const xrayLayer = mk('position:fixed;inset:0;display:none;');
   const rulerLayer = mk('position:fixed;inset:0;display:none;');
+  const pinBox   = mk('position:fixed;display:none;outline:2px dashed #e0a030;outline-offset:2px;');
+  pinBox.appendChild(node('div', 'position:absolute;right:0;top:-18px;background:#e0a030;color:#1c1b19;border-radius:3px;padding:0 5px;font:600 10px/16px system-ui;', 'pin'));
   const hoverTag = document.createElement('div');
   hoverTag.setAttribute('data-nudge', '');
   hoverTag.style.cssText = 'position:absolute;left:0;top:-19px;background:#2f6fed;color:#fff;border-radius:3px;padding:0 5px;font:10px/16px ui-monospace,Menlo,monospace;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis;';
@@ -986,6 +1153,7 @@
       pos(handles.nw, -5, -5); pos(handles.ne, b.width - 5, -5);
       pos(handles.sw, -5, b.height - 5); pos(handles.se, b.width - 5, b.height - 5);
     } else selBox.style.display = 'none';
+    updatePin();
   }
 
   function showGuides(s) {
@@ -1036,7 +1204,7 @@
       <button data-nudge id="nudge-recopy" style="display:none;background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Re-copy</button>
       <button data-nudge id="nudge-reset" style="background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Reset</button>
     </div>
-    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · ⌥↑ parent · ⌥-hover measures · x x-ray · shift disables snap · esc deselect</div>`;
+    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · ⌥↑ parent · ⌥-hover measures, ⌥-drag sets the gap · p pin, m match · a siblings · x x-ray · shift disables snap · esc deselect</div>`;
 
   const $ = (id) => panel.querySelector('#' + id);
   const setStatus = (t) => { $('nudge-status').textContent = t; };
@@ -1061,6 +1229,9 @@
     if (r.w != null) bits.push(`width ${rnd(r.base.w)} → ${rnd(r.w)}px`);
     if (r.h != null) bits.push(`height ${rnd(r.base.h)} → ${rnd(r.h)}px`);
     if (r.locked) bits.push('ratio locked');
+    if (r.gap) bits.push(`gap ${r.gap.from} → ${r.gap.to}px`);
+    if (r.matched) bits.push(`matches ${descriptor(r.matched.el).split(' > ').pop()}`);
+    if (r.also) bits.push(`+${r.also.length} sibling${r.also.length > 1 ? 's' : ''}`);
     if (r.dx || r.dy) {
       const mv = [];
       if (r.dx) mv.push(`${r.dx > 0 ? 'right' : 'left'} ${Math.abs(rnd(r.dx))}px`);
@@ -1149,6 +1320,7 @@
     let responsive = false;
     recs.forEach((r, i) => {
       lines.push(`${i + 1}. ${label(r.el)}`);
+      if (r.matched && !r.removed && document.contains(r.matched.el)) lines.push(`   make this match ${label(r.matched.el)}: ${r.matched.props.join(', ')}`);
       if (r.removed) lines.push('   remove this element from the markup');
       else if (r.text != null) lines.push(`   ${textChange(collapse(r.baseText), collapse(r.text))}`);
       if (r.w != null) {
@@ -1171,6 +1343,9 @@
         lines.push(`   moved ${mv.join(', ')}`);
       }
       r.snaps.forEach((s) => lines.push(`   ${s}`));
+      if (r.gap && !r.removed) lines.push(`   gap to ${label(r.gap.other)} ${r.gap.from}px → ${r.gap.to}px (${r.gap.source})`);
+      guardLines(r).forEach((g) => lines.push(`   ${g}`));
+      if (r.also) lines.push(`   apply the same to its ${r.also.length} sibling${r.also.length > 1 ? 's' : ''} (${r.also.length + 1} × ${descriptor(r.el).split(' > ').pop()} in total)`);
       if (!r.removed) { const rn = responsiveNote(r.el); if (rn) { lines.push(`   ${rn}`); responsive = true; } }
       lines.push('');
     });
@@ -1184,6 +1359,9 @@
     if (recs.some((r) => !r.removed && Object.keys(r.colour).length)) lines.push(FOOTER.colour);
     if (recs.some((r) => !r.removed && r.text != null)) lines.push(FOOTER.text);
     if (recs.some((r) => r.removed)) lines.push(FOOTER.removals);
+    if (recs.some((r) => r.gap && !r.removed)) lines.push(FOOTER.gap);
+    if (recs.some((r) => r.matched && !r.removed)) lines.push(FOOTER.match);
+    if (recs.some((r) => r.also)) lines.push(FOOTER.siblings);
     if (responsive) lines.push(FOOTER.responsive);
     return lines.join('\n');
   }
@@ -1205,9 +1383,12 @@
   async function copy() {
     const recs = unsentRecs();
     if (!recs.length) { setStatus('Nothing to copy yet.'); return; }
-    if (!(await writeClipboard(report(recs)))) { setStatus('Copy failed. Nothing was marked as sent.'); return; }
+    const text = report(recs);
+    if (!(await writeClipboard(text))) { setStatus('Copy failed. Nothing was marked as sent.'); return; }
     remember(recs);
     state.batch++;
+    state.history.push({ batch: state.batch, at: new Date().toISOString(), text });
+    state.recopies = 0;
     recs.forEach((r) => { r.sent = true; r.sentBatch = state.batch; r.sentSeq = state.reloadSeq; });
     state.notice = null;
     state.copyLock = true;
@@ -1224,6 +1405,8 @@
     const text = report(recs);
     remember(recs);
     state.batch++;
+    state.history.push({ batch: state.batch, at: new Date().toISOString(), text });
+    state.recopies = 0;
     recs.forEach((r) => { r.sent = true; r.sentBatch = state.batch; r.sentSeq = state.reloadSeq; });
     state.notice = null;
     render();
@@ -1235,7 +1418,9 @@
     let recs = sentRecs().filter((r) => r.sentBatch === state.batch);
     if (!recs.length) recs = sentRecs();
     if (!recs.length) return;
-    setStatus((await writeClipboard(report(recs))) ? 'Copied again. Clear the preview once your agent has applied it.' : 'Copy failed. Try again.');
+    if (!(await writeClipboard(report(recs)))) { setStatus('Copy failed. Try again.'); return; }
+    state.recopies++;
+    setStatus(state.recopies >= 2 ? `Copied again (${state.recopies}×). If the agent is not applying it, paste the batch as the whole message, with nothing before it.` : 'Copied again. Clear the preview once your agent has applied it.');
   }
 
   function clearPreview() {
@@ -1271,6 +1456,7 @@
     }
     const base = r.base[d.key];
     r[d.key] = Math.abs(v - base) < 0.5 ? null : rnd(v);
+    if (!state.matching) r.matched = null;
     apply(r);
     finish(r, false);
     renderProps();
@@ -1518,6 +1704,7 @@
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (!el || el === document.body || el === document.documentElement) { select(null); return; }
     if (state.selected && (el === state.selected || state.selected.contains(el))) { startMoveDrag(e, el); return; }
+    if (e.altKey && state.selected && !el.contains(state.selected)) { startGapDrag(e, el); return; }
     select(el);
   }
 
@@ -1531,11 +1718,14 @@
     d.r = r;
     d.dx0 = r.dx; d.dy0 = r.dy;
     if (d.kind === 'move') d.rect = b;
-    else { d.w0 = b.width; d.h0 = b.height; d.left = b.left; d.top = b.top; d.right = b.right; d.bottom = b.bottom; }
+    else if (d.kind === 'gap') {
+      const src = gapSource(state.selected, d.other, d.axis, d.after);
+      r.gap = { other: state.selected, axis: d.axis, from: rnd(d.gap0), to: rnd(d.gap0), target: src.target, prop: src.prop, propFrom: src.propFrom, origInline: src.target.style[src.prop], source: src.text };
+    } else { d.w0 = b.width; d.h0 = b.height; d.left = b.left; d.top = b.top; d.right = b.right; d.bottom = b.bottom; }
   }
 
   function startDrag(e, d) {
-    d.el = state.selected; d.startX = e.clientX; d.startY = e.clientY; d.r = null;
+    d.el = d.kind === 'gap' ? d.other : state.selected; d.startX = e.clientX; d.startY = e.clientY; d.r = null;
     state.notice = null;
     const existing = state.changes.get(d.el);
     // Every drag waits for real movement: a click that does not move selects what was clicked (see onUp), and a
@@ -1558,6 +1748,14 @@
     }
     const r = d.r;
     const ddx = e.clientX - d.startX, ddy = e.clientY - d.startY;
+    if (d.kind === 'gap') {
+      const along = d.axis === 'x' ? ddx : ddy;
+      r.gap.to = Math.max(0, rnd(d.gap0 + (d.after ? along : -along)));
+      d.shift = true;   // a gap has no alignment to record
+      apply(r); updateBoxes(); drawRulers(d.other);
+      setStatus(withNotice(summary(r)));
+      return;
+    }
     if (d.kind === 'move') {
       let dx = d.dx0 + ddx, dy = d.dy0 + ddy;
       let s = null;
@@ -1641,6 +1839,11 @@
     if (e.key === 'Escape') { select(null); return; }
     if ((e.key === 'x' || e.key === 'X') && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); state.xray = !state.xray; drawXray(); setStatus(state.xray ? 'X-ray on: every container outlined. Press x to turn it off.' : (state.selected ? descriptor(state.selected) : idleStatus())); if (state.selected && !state.xray) showCrumbs(state.selected); return; }
     if (!state.selected) return;
+    if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (e.key === 'p' || e.key === 'P') { e.preventDefault(); togglePin(); return; }
+      if (e.key === 'm' || e.key === 'M') { e.preventDefault(); matchPin(); return; }
+      if (e.key === 'a' || e.key === 'A') { e.preventDefault(); toggleSiblings(); return; }
+    }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       e.preventDefault();
       state.notice = null;
@@ -1760,7 +1963,7 @@
     pageListeners.forEach(([t, ev, fn]) => t.removeEventListener(ev, fn, true));
     headObserver.disconnect(); headTarget = null;
     state.awake = false;
-    hoverBox.style.display = 'none'; showGuides(null); bpLayer.style.display = 'none'; xrayLayer.style.display = 'none'; rulerLayer.style.display = 'none';
+    hoverBox.style.display = 'none'; showGuides(null); bpLayer.style.display = 'none'; xrayLayer.style.display = 'none'; rulerLayer.style.display = 'none'; pinBox.style.display = 'none';
     overlay.style.display = 'none'; panel.style.display = 'none';
     dot.hidden = state.dotHidden;
   }
@@ -1830,6 +2033,7 @@
 
   window.__nudge = {
     destroy, wake, sleep, toggle, close, report, take, verify,
+    history: () => state.history.slice(),
     breakpoints: () => ({ points: breakpoints().points.slice(), unreadable: breakpoints().unreadable, range: rangeOf(innerWidth).text }),
     // Test hook. Read-only view of internal state; no behavioural effect.
     _state: {
@@ -1845,8 +2049,9 @@
       get collapsed() { return state.collapsed; },
       get bpLines() { return state.bpLines; },
       get xray() { return state.xray; },
+      get pin() { return state.pin; },
       get verdict() { return state.verdict; },
-      els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot, bpLayer, xrayLayer, rulerLayer, hoverTag },
+      els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot, bpLayer, xrayLayer, rulerLayer, hoverTag, pinBox },
     },
   };
 })();

@@ -49,6 +49,11 @@
   .pct-wrap { width: 600px; }
   .pct { max-width: 50%; background: #e7dada; padding: 8px; box-sizing: border-box; }
   .type-em { font-size: 2rem; letter-spacing: -0.035em; margin: 0; }
+  #stack { padding: 40px; }
+  .stack-a, .stack-b { width: 240px; padding: 10px; box-sizing: border-box; background: #d4dde6; }
+  .stack-b { margin-top: 20px; }
+  #list { padding: 40px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+  .item { width: 200px; padding: 10px; box-sizing: border-box; background: #e6e0d4; }
   #responsive { padding: 40px; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
   .bp-box { width: 400px; padding: 12px; box-sizing: border-box; background: #d7e3ea; }
   .bp-wide { width: 300px; padding: 12px; box-sizing: border-box; background: #e3d7ea; margin-left: 40px; }
@@ -143,6 +148,18 @@
   <div class="roomy" data-test="roomy">Narrower than its max-width</div>
   <div class="pct-wrap"><div class="pct" data-test="pct">Held by a percentage max-width</div></div>
   <p class="type-em" data-test="em">Sized in rem, tracked in em</p>
+</section>
+
+<section id="stack">
+  <div class="stack-a" data-test="stack-a">Block above, no margin</div>
+  <div class="stack-b" data-test="stack-b">Block below with a top margin</div>
+</section>
+
+<section id="list">
+  <div class="item" data-test="item-1">First of three alike</div>
+  <div class="item" data-test="item-2">Second of three alike</div>
+  <div class="item" data-test="item-3">Third of three alike</div>
+  <p class="item-note" data-test="item-note">Not an item</p>
 </section>
 
 <section id="responsive">

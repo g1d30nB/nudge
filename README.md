@@ -202,6 +202,10 @@ Whichever way it is added, the `data-nudge-dormant` attribute is what makes nudg
 - Double-click a selected element to edit its text in place. Escape or a click elsewhere finishes. Only elements with no child elements can be edited, and only as plain text; the batch reports the old string and the new one.
 - With a text element selected, the panel shows its font size, line height, letter spacing and weight. Step them with the arrow keys or the small arrows that appear in each box: 1 at a time, 10 with Shift, a fine step with Option. A value that lands on another element's value snaps to it, and the batch says so: `font size 17px → 21px (now matches .lede)`.
 - The panel also shows the element's text colour, and its background colour where it already has one. Click either to open a palette built from the colour tokens declared on `:root`, with the current token marked. The batch reports token names, such as `colour var(--ink-muted) → var(--ink)`. The colour picker under the palette is for anything else, and the batch then says no token matched that value.
+- **Hold Option and hover** another element to measure the space between it and the selection, or the insets when one contains the other. **Hold Option and drag** that element to change the gap: nudge previews it by editing the rule that made the space, the parent's gap or a margin, and the batch names that rule.
+- Press **p** to pin the selected element, then select another and press **m** to make it match the pin: width and height for boxes and images, font size, line height, letter spacing, weight and colour for text. The batch says what was matched to what.
+- Press **a** to apply the selected element's change to its siblings, the elements beside it with the same tag and classes. The batch says the change belongs on their shared rule. Press a again to release them.
+- Press **x** to outline every container on the page, which shows the wrappers that have no surface of their own. The hover box names the element under the pointer and gives its size, and the panel header shows the selection's ancestry: click any step to select it.
 - Hold Shift while dragging to disable snapping and, on a move, to keep to one axis. Release with Shift held and no alignment is recorded; the move is taken as exact.
 - Click the panel's header to collapse it to a single row while you work; the row shows how many changes you have made and keeps the Copy button. Click it again to see the list and the type and colour controls.
 - The badge on the header, such as `1280 · 1200+`, is the width of the browser window and the range of your own breakpoints it falls in. nudge reads the breakpoints from the page's stylesheets. Click the badge to draw a line at each breakpoint, so you can see where a layout changes; click again to hide them. Narrow the window and the badge follows.
@@ -245,7 +249,9 @@ Widths were measured at this viewport; keep them responsive (max-width or percen
 
 The second line says which of the page's own breakpoint ranges the batch was measured in. Where an element has media rules at other widths the entry says so, for example `different rules apply below 640px; this was measured in the 1024px and up range`, and the footer asks the agent to change the rule for that range unless the intent clearly applies everywhere.
 
-Each entry names the element by its selector path and a snippet of its text, then lists what changed and what it now lines up with. The closing lines tell the agent how to translate those into CSS, and a batch only carries the lines that apply to it: no spacing guidance without an unaligned move, no removal guidance without a removal.
+Each entry names the element by its selector path and a snippet of its text, then lists what changed and what it now lines up with. Where React or Vue leave the component name readable in dev mode, the entry adds `in <Hero>`; Svelte and Astro do not, so those entries stay on the selector path.
+
+Two lines come from measurement rather than from what you did: a colour change that leaves text below the AA contrast minimum against its background says so with the ratio, and a font size under 12px is flagged as small for body text. The closing lines tell the agent how to translate those into CSS, and a batch only carries the lines that apply to it: no spacing guidance without an unaligned move, no removal guidance without a removal.
 
 When an element was held back by a max-width the browser computed, from a clamp or a percentage, the batch says the element was capped at that size by a computed max-width and asks the agent to check the source, rather than quoting a value like 725.328px as if someone had written it.
 
@@ -279,7 +285,7 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 
 ## Where it is going
 
-The open issues are the roadmap. Text editing, type and token-aware colour arrived in v1.1.0; adjusting the gap between elements is the one I most want next.
+The open issues are the roadmap. Text editing, type and token-aware colour arrived in v1.1.0; resizing from any edge, breakpoints, verify after reload, matching, siblings and the gap gesture are on main for the next releases.
 
 nudge will not gain the ability to add elements or change layout mode. It corrects what is there; it is not somewhere to build a page.
 
