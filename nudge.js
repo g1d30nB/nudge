@@ -59,6 +59,7 @@
     bpLines: false,         // breakpoint lines drawn on the overlay
     verdict: null,          // after a reload or a cleared preview: what the agent applied of the last batch
     expect: null,           // the last sent batch's expected measurements, mirrored in sessionStorage
+    xray: false,            // outlines on every container, to find wrappers that have no surface of their own
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -134,9 +135,38 @@
     return `text "${x}" → "${y}"`;
   }
 
+  // The component that rendered this element, from the framework's own dev internals where it leaves any:
+  // React's fiber on the node, Vue 3's parent component, Vue 2's instance. Nearest named component wins;
+  // host nodes, fragments, providers and anonymous functions are skipped. Null where nothing is readable.
+  function componentName(el) {
+    const named = (t) => {
+      if (!t) return null;
+      if (typeof t === 'function') return t.displayName || t.name || null;
+      if (typeof t === 'object') return t.displayName || named(t.render) || named(t.type) || null;
+      return null;
+    };
+    const bad = /^(Fragment|Provider|Consumer|Suspense|StrictMode|Profiler|Context|Anonymous|_?default|[a-z]\w*)$/;
+    for (let cur = el; cur && cur !== document.documentElement; cur = cur.parentElement) {
+      const key = Object.keys(cur).find((k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+      if (key) {
+        for (let f = cur[key]; f; f = f.return) { const n = named(f.type); if (n && !bad.test(n)) return n; }
+        return null;
+      }
+      if (cur.__vueParentComponent) {
+        for (let c = cur.__vueParentComponent; c; c = c.parent) { const t = c.type || {}; const n = t.name || t.__name; if (n && !bad.test(n)) return n; }
+        return null;
+      }
+      if (cur.__vue__) {
+        for (let v = cur.__vue__; v; v = v.$parent) { const o = v.$options || {}; const n = o.name || o._componentTag; if (n && !bad.test(n)) return n; }
+        return null;
+      }
+    }
+    return null;
+  }
+
   function label(el) {
-    const src = source(el);
-    return descriptor(el) + (src ? ` (${src})` : '') + (snippet(el) ? ' ' + snippet(el) : '');
+    const src = source(el), comp = componentName(el);
+    return descriptor(el) + (comp ? ` in <${comp}>` : '') + (src ? ` (${src})` : '') + (snippet(el) ? ' ' + snippet(el) : '');
   }
 
   /* ────────────────────────── records ────────────────────────── */
@@ -848,6 +878,72 @@
   const guideV   = mk('position:fixed;display:none;top:0;bottom:0;width:1px;background:#e0447a;');
   const matchBox = mk('position:fixed;display:none;outline:1px dashed #e0447a;outline-offset:2px;');
   const bpLayer  = mk('position:fixed;inset:0;display:none;');
+  const xrayLayer = mk('position:fixed;inset:0;display:none;');
+  const rulerLayer = mk('position:fixed;inset:0;display:none;');
+  const hoverTag = document.createElement('div');
+  hoverTag.setAttribute('data-nudge', '');
+  hoverTag.style.cssText = 'position:absolute;left:0;top:-19px;background:#2f6fed;color:#fff;border-radius:3px;padding:0 5px;font:10px/16px ui-monospace,Menlo,monospace;white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis;';
+  hoverBox.appendChild(hoverTag);
+
+  // What the pointer is over and how big it is, so a wrapper can be told from its child before clicking.
+  function showHover(el, b) {
+    place(hoverBox, b);
+    const short = descriptor(el).split(' > ').pop();
+    hoverTag.textContent = `${short} · ${rnd(b.width)}×${rnd(b.height)}`;
+    hoverTag.style.top = b.top < 22 ? '2px' : '-19px';
+  }
+
+  // X-ray: a faint outline on every container in view, so the boxes that have no surface of their own can
+  // be seen and clicked. Containers only: an element with element children and a box in the viewport.
+  function drawXray() {
+    xrayLayer.textContent = '';
+    xrayLayer.style.display = state.xray && state.awake ? 'block' : 'none';
+    if (!state.xray || !state.awake) return;
+    let n = 0;
+    for (const el of document.body.querySelectorAll('*')) {
+      if (n >= 600) break;
+      if (isTool(el) || !el.children.length) continue;
+      const b = el.getBoundingClientRect();
+      if (!b.width || !b.height || b.bottom < 0 || b.top > innerHeight || b.right < 0 || b.left > innerWidth) continue;
+      const box = node('div', `position:fixed;left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px;outline:1px dashed rgba(47,111,237,.35);outline-offset:-1px;`);
+      box.dataset.xray = '';
+      xrayLayer.appendChild(box); n++;
+    }
+  }
+
+  // Rulers: with an element selected, Option-hover on another shows the distance between them. Beside each
+  // other: the gap on the axis where they do not overlap. One inside the other: the inset on each side.
+  function ruler(x1, y1, x2, y2, text) {
+    const horizontal = y1 === y2;
+    const len = horizontal ? x2 - x1 : y2 - y1;
+    const line = node('div', `position:fixed;left:${x1}px;top:${y1}px;${horizontal ? `width:${len}px;height:0;border-top:1px solid #e0447a` : `height:${len}px;width:0;border-left:1px solid #e0447a`};`);
+    line.dataset.ruler = text;
+    const tag = node('div', `position:absolute;${horizontal ? 'left:50%;top:-9px' : 'top:50%;left:4px'};transform:${horizontal ? 'translate(-50%,-100%)' : 'translateY(-50%)'};background:#e0447a;color:#fff;border-radius:3px;padding:0 4px;font:600 10px/16px ui-monospace,Menlo,monospace;white-space:nowrap;`, text);
+    line.appendChild(tag);
+    rulerLayer.appendChild(line);
+  }
+  function drawRulers(other) {
+    rulerLayer.textContent = '';
+    const sel = state.selected;
+    if (!other || !sel || other === sel) { rulerLayer.style.display = 'none'; return; }
+    const a = sel.getBoundingClientRect(), b = other.getBoundingClientRect();
+    const inner = sel.contains(other) ? b : other.contains(sel) ? a : null;
+    const outer = inner === a ? b : inner === b ? a : null;
+    if (inner) {
+      const midX = inner.left + inner.width / 2, midY = inner.top + inner.height / 2;
+      if (inner.left - outer.left >= 1) ruler(outer.left, midY, inner.left, midY, `${rnd(inner.left - outer.left)}`);
+      if (outer.right - inner.right >= 1) ruler(inner.right, midY, outer.right, midY, `${rnd(outer.right - inner.right)}`);
+      if (inner.top - outer.top >= 1) ruler(midX, outer.top, midX, inner.top, `${rnd(inner.top - outer.top)}`);
+      if (outer.bottom - inner.bottom >= 1) ruler(midX, inner.bottom, midX, outer.bottom, `${rnd(outer.bottom - inner.bottom)}`);
+    } else {
+      const gapX = Math.max(a.left, b.left) - Math.min(a.right, b.right);
+      const gapY = Math.max(a.top, b.top) - Math.min(a.bottom, b.bottom);
+      if (gapX > 0) { const y = (Math.max(a.top, b.top) + Math.min(a.bottom, b.bottom)) / 2; const y2 = gapY > 0 ? b.top + b.height / 2 : y; ruler(Math.min(a.right, b.right), y2, Math.max(a.left, b.left), y2, `${rnd(gapX)}`); }
+      if (gapY > 0) { const x = (Math.max(a.left, b.left) + Math.min(a.right, b.right)) / 2; const x2 = gapX > 0 ? b.left + b.width / 2 : x; ruler(x2, Math.min(a.bottom, b.bottom), x2, Math.max(a.top, b.top), `${rnd(gapY)}`); }
+      if (gapX <= 0 && gapY <= 0) { rulerLayer.style.display = 'none'; return; }
+    }
+    rulerLayer.style.display = 'block';
+  }
 
   // One dashed line per breakpoint within the viewport, labelled at the top, so a layout can be read against
   // the widths at which its rules change.
@@ -940,7 +1036,7 @@
       <button data-nudge id="nudge-recopy" style="display:none;background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Re-copy</button>
       <button data-nudge id="nudge-reset" style="background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Reset</button>
     </div>
-    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · ⌥↑ parent · shift disables snap · esc deselect</div>`;
+    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · ⌫ remove · arrows nudge · ⌥↑ parent · ⌥-hover measures · x x-ray · shift disables snap · esc deselect</div>`;
 
   const $ = (id) => panel.querySelector('#' + id);
   const setStatus = (t) => { $('nudge-status').textContent = t; };
@@ -1368,13 +1464,30 @@
   /* ────────────────────────── selection ────────────────────────── */
 
   function select(el, keepClimb) {
-    if (el !== state.selected) { state.typeCands = null; state.tokens = null; state.palette = null; matchBox.style.display = 'none'; }
+    if (el !== state.selected) { state.typeCands = null; state.tokens = null; state.palette = null; matchBox.style.display = 'none'; rulerLayer.style.display = 'none'; }
     if (!keepClimb) state.climbed = [];
     state.selected = el;
     updateBoxes();
     renderProps();
-    if (el) setStatus(descriptor(el));
+    if (el) showCrumbs(el);
     else setStatus(idleStatus());
+  }
+
+  // The selection's ancestry as clickable crumbs in the status line: the same path the descriptor prints,
+  // but each step selects. Any later status message simply replaces it.
+  function showCrumbs(el) {
+    const st = $('nudge-status');
+    st.textContent = '';
+    const chain = [];
+    for (let cur = el, depth = 0; cur && cur !== document.body && cur !== document.documentElement && depth < 3; cur = cur.parentElement, depth++) chain.unshift(cur);
+    chain.forEach((cur, i) => {
+      if (i) st.appendChild(node('span', 'color:#6f6a62;white-space:pre', ' > '));   // the status still reads as the descriptor
+      const crumb = node('span', `cursor:pointer;${cur === el ? 'color:#ece7df' : ''}`, descriptor(cur).split(' > ').pop());
+      crumb.dataset.crumb = '';
+      crumb.title = cur === el ? 'selected' : 'select this element';
+      crumb.addEventListener('click', (e) => { e.stopPropagation(); if (document.contains(cur)) select(cur); });
+      st.appendChild(crumb);
+    });
   }
 
   /* ────────────────────────── events ────────────────────────── */
@@ -1382,8 +1495,9 @@
   function onMove(e) {
     if (state.drag) { dragMove(e); return; }
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    if (!el || isTool(el) || el === document.body || el === document.documentElement) { hoverBox.style.display = 'none'; return; }
-    place(hoverBox, el.getBoundingClientRect());
+    if (!el || isTool(el) || el === document.body || el === document.documentElement) { hoverBox.style.display = 'none'; rulerLayer.style.display = 'none'; return; }
+    showHover(el, el.getBoundingClientRect());
+    if (e.altKey && state.selected) drawRulers(el); else drawRulers(null);
   }
 
   function onDown(e) {
@@ -1525,6 +1639,7 @@
     // Panel buttons keep focus after a click because page mousedowns are cancelled, so only text fields may swallow keys.
     if (isTool(e.target) && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
     if (e.key === 'Escape') { select(null); return; }
+    if ((e.key === 'x' || e.key === 'X') && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); state.xray = !state.xray; drawXray(); setStatus(state.xray ? 'X-ray on: every container outlined. Press x to turn it off.' : (state.selected ? descriptor(state.selected) : idleStatus())); if (state.selected && !state.xray) showCrumbs(state.selected); return; }
     if (!state.selected) return;
     if (e.key === 'Backspace' || e.key === 'Delete') {
       e.preventDefault();
@@ -1562,7 +1677,8 @@
     }
   }
 
-  function onScroll() { updateBoxes(); hoverBox.style.display = 'none'; }
+  let xrayFrame = 0;
+  function onScroll() { updateBoxes(); hoverBox.style.display = 'none'; rulerLayer.style.display = 'none'; if (state.xray && !xrayFrame) xrayFrame = requestAnimationFrame(() => { xrayFrame = 0; drawXray(); }); }
 
   function onContext(e) { if (!isTool(e.target)) e.preventDefault(); }
 
@@ -1644,7 +1760,7 @@
     pageListeners.forEach(([t, ev, fn]) => t.removeEventListener(ev, fn, true));
     headObserver.disconnect(); headTarget = null;
     state.awake = false;
-    hoverBox.style.display = 'none'; showGuides(null); bpLayer.style.display = 'none';
+    hoverBox.style.display = 'none'; showGuides(null); bpLayer.style.display = 'none'; xrayLayer.style.display = 'none'; rulerLayer.style.display = 'none';
     overlay.style.display = 'none'; panel.style.display = 'none';
     dot.hidden = state.dotHidden;
   }
@@ -1728,8 +1844,9 @@
       get mode() { return DORMANT ? 'dormant' : 'bookmarklet'; },
       get collapsed() { return state.collapsed; },
       get bpLines() { return state.bpLines; },
+      get xray() { return state.xray; },
       get verdict() { return state.verdict; },
-      els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot, bpLayer },
+      els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot, bpLayer, xrayLayer, rulerLayer, hoverTag },
     },
   };
 })();

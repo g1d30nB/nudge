@@ -98,6 +98,11 @@ All pass/fail. No subjective checks.
 | 73 | Breakpoint lines | Clicking the badge draws one labelled dashed line per breakpoint inside the viewport, at x = breakpoint − 1, without collapsing the panel; at 800 only the 600 line remains; a second click hides them |
 | 74 | Verify after reload | Two changes sent with `take()` (card-a to 520, card-b moved 2px right); the served CSS gains the width only; after reload `verify('reload')` reports `1 of 2 applied` and names card-b's left edge, now and wanted; the verdict shows in the panel on wake and a new change hides it; once both are applied a reload reports `2 of 2`, the stored expectation is removed and a further reload reports nothing |
 | 75 | Verify on Clear preview | After Copy, a hot style swap that applies the width, then Clear preview, shows `Preview cleared: 1 of 1 applied.`; a second batch cleared without any change shows `0 of 1 applied` with the width now and wanted, and keeps the expectation |
+| 76 | Breadcrumb | Selecting the work figure's image puts `div.case-media > figure > img` in the status as crumbs; clicking the `figure` crumb selects the figure without collapsing the panel; a status message still replaces the crumbs |
+| 77 | Hover tag | Hovering card-a shows a tag on the hover box reading `div.card.card-a · 360×H`; the tag sits above the box, or inside it when the box touches the top of the viewport |
+| 78 | X-ray | Pressing x outlines every container in view (`#hero`, `.hero-text` among them) and says so in the status; pressing x again removes them; the hint names it |
+| 79 | Component names | With a React fiber chain on an element whose nearest named component is `Hero`, the batch labels it `in <Hero>`; a Vue 3 `__vueParentComponent` with `__name: 'PricingCard'` gives `in <PricingCard>`; an element with neither has no `in <…>` |
+| 80 | Rulers | With card-a selected, Option-hover on card-b draws one ruler reading `24` between them; Option-hover on the section draws four insets, `40`, `880`, `40`, `144` at 1280 wide; releasing Option hides them |
 
 ## Test Plan
 
