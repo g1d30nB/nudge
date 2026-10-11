@@ -202,6 +202,11 @@
     { key: 'letterSpacing', label: 'spacing', name: 'letter spacing', unit: 'px', step: 1, big: 10, fine: 0.1, min: -100, tol: 0.05 },
     { key: 'fontWeight', label: 'weight', name: 'weight', unit: '', step: 100, big: 100, fine: 10, min: 1, max: 1000, tol: 0 },
   ];
+  // Width and height as typed or stepped values, snapping to other elements' edges and sizes like a drag.
+  const SIZE = [
+    { kind: 'size', key: 'w', label: 'width', name: 'width', unit: 'px', step: 1, big: 10, fine: 0.5, min: 8, tol: 0.5, axis: 'x' },
+    { kind: 'size', key: 'h', label: 'height', name: 'height', unit: 'px', step: 1, big: 10, fine: 0.5, min: 8, tol: 0.5, axis: 'y' },
+  ];
   const fmt = (n) => String(Math.round(n * 100) / 100);
   const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
 
@@ -559,14 +564,17 @@
   // Resize on one axis. The moving edge (right or bottom) may snap to a candidate's edge and the
   // size may snap to a candidate's size. The nearer correction is applied; the other survives only
   // if it still holds afterwards, so both can be reported when they genuinely coincide.
-  function fitSize(origin, size, axis, tol) {
-    const edgeName = axis === 'x' ? 'right' : 'bottom';
-    const end = origin + size;
+  // `origin` is the fixed edge: left/top when the end edge moves, right/bottom when the start edge does.
+  // `d` is always the size correction that lands the moving edge on the match.
+  function fitSize(origin, size, axis, tol, side = 'end') {
+    const start = side === 'start';
+    const edgeName = axis === 'x' ? (start ? 'left' : 'right') : (start ? 'top' : 'bottom');
+    const moving = start ? origin - size : origin + size;
     let edge = null, match = null;
     for (const c of state.candidates) {
       const edges = axis === 'x' ? [[c.l, 'left'], [c.r, 'right']] : [[c.t, 'top'], [c.b, 'bottom']];
       for (const [v, eb] of edges) {
-        const n = { d: v - end, at: v, c, ea: edgeName, eb, same: eb === edgeName };
+        const n = { d: start ? moving - v : v - moving, at: v, c, ea: edgeName, eb, same: eb === edgeName };
         if (Math.abs(n.d) <= tol && better(n, edge)) edge = n;
       }
       const m = { d: (axis === 'x' ? c.w : c.h) - size, c, same: true };
@@ -586,11 +594,13 @@
       const f = fitSize(b.left, b.width, 'x', RELATE);
       if (f.edge) out.push(edgeLine(f));
       if (f.match) out.push(`width matches width of ${label(f.match.c.el)} (${rnd(f.match.c.w)}px)`);
+      if (r.dx) { const g = fitSize(b.right, b.width, 'x', RELATE, 'start'); if (g.edge) out.push(edgeLine(g)); }
     }
     if (r.h != null) {
       const f = fitSize(b.top, b.height, 'y', RELATE);
       if (f.edge) out.push(edgeLine(f));
       if (f.match) out.push(`height matches height of ${label(f.match.c.el)} (${rnd(f.match.c.h)}px)`);
+      if (r.dy) { const g = fitSize(b.bottom, b.height, 'y', RELATE, 'start'); if (g.edge) out.push(edgeLine(g)); }
     }
     return out;
   }
@@ -618,10 +628,11 @@
   const matchBox = mk('position:fixed;display:none;outline:1px dashed #e0447a;outline-offset:2px;');
 
   const handles = {};
-  for (const h of ['e', 's', 'se']) {
+  const CURSOR = { n: 'ns', s: 'ns', e: 'ew', w: 'ew', nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw' };
+  for (const h of ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se']) {
     const d = document.createElement('div');
     d.setAttribute('data-nudge', ''); d.dataset.handle = h;
-    d.style.cssText = `position:absolute;width:10px;height:10px;background:#fff;border:2px solid #2f6fed;border-radius:2px;pointer-events:auto;cursor:${h === 'e' ? 'ew' : h === 's' ? 'ns' : 'nwse'}-resize;`;
+    d.style.cssText = `position:absolute;width:10px;height:10px;background:#fff;border:2px solid #2f6fed;border-radius:2px;pointer-events:auto;cursor:${CURSOR[h]}-resize;`;
     selBox.appendChild(d); handles[h] = d;
   }
 
@@ -636,9 +647,10 @@
       const b = state.selected.getBoundingClientRect();
       place(selBox, b);
       const pos = (h, x, y) => { h.style.left = x + 'px'; h.style.top = y + 'px'; };
-      pos(handles.e, b.width - 5, b.height / 2 - 5);
-      pos(handles.s, b.width / 2 - 5, b.height - 5);
-      pos(handles.se, b.width - 5, b.height - 5);
+      pos(handles.n, b.width / 2 - 5, -5); pos(handles.s, b.width / 2 - 5, b.height - 5);
+      pos(handles.e, b.width - 5, b.height / 2 - 5); pos(handles.w, -5, b.height / 2 - 5);
+      pos(handles.nw, -5, -5); pos(handles.ne, b.width - 5, -5);
+      pos(handles.sw, -5, b.height - 5); pos(handles.se, b.width - 5, b.height - 5);
     } else selBox.style.display = 'none';
   }
 
@@ -666,6 +678,11 @@
     </div>
     <div data-nudge id="nudge-reload" style="display:none;padding:8px 14px;background:#3a2f12;color:#f2c86b;border-bottom:1px solid #2c2a27;">The page reloaded. Clear the preview to see the real result.</div>
     <div data-nudge id="nudge-list" style="flex:1;overflow:auto;padding:6px 0;"></div>
+    <div data-nudge id="nudge-size" style="display:none;padding:8px 14px;border-top:1px solid #2c2a27;">
+      <div data-nudge style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        ${['w:width', 'h:height'].map((x) => { const [k, l] = x.split(':'); return `<label data-nudge style="display:flex;flex-direction:column;gap:2px;color:#6f6a62;font-size:10px;">${l}<input data-nudge data-prop="${k}" inputmode="decimal" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;margin:0;background:#242220;border:1px solid #3a3733;border-radius:4px;color:#ece7df;padding:3px 5px;font:12px ui-monospace,Menlo,monospace;"></label>`; }).join('')}
+      </div>
+    </div>
     <div data-nudge id="nudge-props" style="display:none;padding:8px 14px;border-top:1px solid #2c2a27;">
       <div data-nudge id="nudge-type" style="display:none;">
         <div data-nudge style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
@@ -873,6 +890,35 @@
   }
 
   const typeInput = (key) => panel.querySelector(`input[data-prop="${key}"]`);
+  const FIELDS = [...TYPE, ...SIZE];
+  const fieldDef = (key) => FIELDS.find((x) => x.key === key);
+
+  function setSize(d, value, how) {
+    const el = state.selected;
+    if (!el || !isFinite(value)) return;
+    state.notice = null;
+    const r = rec(el);
+    const b = el.getBoundingClientRect();
+    let v = Math.max(d.min, value);
+    if (how === 'step') {
+      state.candidates = collectCandidates(el);
+      const f = fitSize(d.axis === 'x' ? b.left : b.top, v, d.axis, d.tol);
+      v += f.d;
+    }
+    const base = r.base[d.key];
+    r[d.key] = Math.abs(v - base) < 0.5 ? null : rnd(v);
+    apply(r);
+    finish(r, false);
+    renderProps();
+    setStatus(withNotice(summary(r) || descriptor(el)));
+  }
+
+  function sizeFrom(d) {
+    const el = state.selected, r = state.changes.get(el);
+    if (r && r[d.key] != null) return r[d.key];
+    const b = el.getBoundingClientRect();
+    return d.key === 'w' ? b.width : b.height;
+  }
 
   // Controls appear only for the selected element and only when they apply to it.
   function renderProps() {
@@ -880,6 +926,9 @@
     const ok = !!el && document.contains(el) && !INTRINSIC.test(el.tagName.toUpperCase());
     const showType = ok && ownText(el);
     const colours = ok ? COLOUR.filter((d) => d.relevant(el) || (state.changes.get(el) && state.changes.get(el).colour[d.key])) : [];
+    const showSize = !!el && document.contains(el) && !state.collapsed;
+    $('nudge-size').style.display = showSize ? '' : 'none';
+    if (showSize) { const r = el && state.changes.get(el); SIZE.forEach((d) => { const i = typeInput(d.key); if (document.activeElement !== i || (r && r[d.key] != null)) i.value = fmt(sizeFrom(d)); }); }
     $('nudge-type').style.display = showType ? '' : 'none';
     $('nudge-colour').style.display = colours.length ? '' : 'none';
     $('nudge-colour').style.marginTop = showType && colours.length ? '8px' : '0';
@@ -905,6 +954,11 @@
   // One step up or down, shared by the arrow keys and the stepper buttons so both follow the same rules.
   function stepType(d, dir, mods) {
     if (!state.selected) return;
+    if (d.kind === 'size') {
+      const size = mods.altKey ? d.fine : mods.shiftKey ? d.big : d.step;
+      setSize(d, sizeFrom(d) + dir * size, mods.altKey ? 'fine' : 'step');
+      return;
+    }
     const r = state.changes.get(state.selected);
     const from = r && r.baseType ? typeFrom(r, d) : (() => { const t = readType(cs(state.selected)); return t[d.key] ?? (d.key === 'lineHeight' ? Math.round(t.fontSize * 1.2) : 0); })();
     const size = mods.altKey ? d.fine : mods.shiftKey ? d.big : d.step;
@@ -1017,7 +1071,7 @@
   }
 
   function onTypeKey(e) {
-    const d = TYPE.find((x) => x.key === e.target.dataset.prop);
+    const d = fieldDef(e.target.dataset.prop);
     if (!d || !state.selected) return;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
@@ -1030,10 +1084,11 @@
   }
 
   function onTypeChange(e) {
-    const d = TYPE.find((x) => x.key === e.target.dataset.prop);
+    const d = fieldDef(e.target.dataset.prop);
     if (!d || !state.selected) return;
     const v = parseFloat(e.target.value);
     if (!isFinite(v)) { renderProps(); return; }
+    if (d.kind === 'size') { if (Math.abs(sizeFrom(d) - v) >= 0.5) setSize(d, v, 'typed'); return; }
     // A change event also fires when the field loses focus. If nothing changed, do not re-render: rebuilding
     // the rows under the pointer would swallow the click that took the focus away, such as a row's undo.
     const r = state.changes.get(state.selected);
@@ -1092,17 +1147,18 @@
     const b = d.el.getBoundingClientRect();
     state.candidates = collectCandidates(d.el);
     d.r = r;
-    if (d.kind === 'move') { d.dx0 = r.dx; d.dy0 = r.dy; d.rect = b; }
-    else { d.w0 = b.width; d.h0 = b.height; d.left = b.left; d.top = b.top; }
+    d.dx0 = r.dx; d.dy0 = r.dy;
+    if (d.kind === 'move') d.rect = b;
+    else { d.w0 = b.width; d.h0 = b.height; d.left = b.left; d.top = b.top; d.right = b.right; d.bottom = b.bottom; }
   }
 
   function startDrag(e, d) {
     d.el = state.selected; d.startX = e.clientX; d.startY = e.clientY; d.r = null;
     state.notice = null;
     const existing = state.changes.get(d.el);
-    // A move waits for real movement: a click that does not move selects what was clicked instead (see onUp).
-    // A click on a sent element must not clear its preview either, so that also waits.
-    if (d.kind !== 'move' && !(existing && existing.sent)) prime(d);
+    // Every drag waits for real movement: a click that does not move selects what was clicked (see onUp), and a
+    // click on a handle or on a sent element records nothing and clears nothing.
+    void existing;
     state.drag = d;
     document.body.style.userSelect = 'none';
   }
@@ -1123,6 +1179,7 @@
     if (d.kind === 'move') {
       let dx = d.dx0 + ddx, dy = d.dy0 + ddy;
       let s = null;
+      if (e.shiftKey) { if (Math.abs(ddx) >= Math.abs(ddy)) dy = d.dy0; else dx = d.dx0; }   // Shift: one axis, no snap
       if (!e.shiftKey) {
         const sh = dx - d.dx0, sv = dy - d.dy0;
         s = snap({ l: d.rect.left + sh, r: d.rect.right + sh, t: d.rect.top + sv, b: d.rect.bottom + sv }, SNAP);
@@ -1135,34 +1192,36 @@
     } else {
       const s = { x: null, y: null, match: null };
       d.shift = e.shiftKey;
-      // Option is the reliable key on macOS: Control-click is the system secondary click.
-      const lock = e.altKey || e.metaKey || e.ctrlKey;
+      const hd = d.handle;
+      const hasW = hd.includes('w'), hasE = hd.includes('e'), hasN = hd.includes('n'), hasS = hd.includes('s');
+      const driveX = hasW || hasE, driveY = hasN || hasS;
+      // Option (or Control) locks the ratio. Command resizes from the centre, so the opposite edge moves too.
+      const centre = e.metaKey;
+      const lock = e.altKey || e.ctrlKey;
       const ratio = d.h0 > 0 ? d.w0 / d.h0 : 0;
       r.locked = lock && ratio > 0;
+      // Size change asked for by the dragged edge; from the centre, both edges move so it doubles.
+      const sx = (hasE ? ddx : hasW ? -ddx : 0) * (centre ? 2 : 1);
+      const sy = (hasS ? ddy : hasN ? -ddy : 0) * (centre ? 2 : 1);
+      let w = d.w0, h = d.h0, setW = false, setH = false;
+      const fitX = (val) => { if (e.shiftKey || centre) return val; const f = fitSize(hasW ? d.right : d.left, val, 'x', SNAP, hasW ? 'start' : 'end'); s.x = f.edge; s.match = s.match || f.match; return val + f.d; };
+      const fitY = (val) => { if (e.shiftKey || centre) return val; const f = fitSize(hasN ? d.bottom : d.top, val, 'y', SNAP, hasN ? 'start' : 'end'); s.y = f.edge; s.match = s.match || f.match; return val + f.d; };
       if (r.locked) {
-        // One axis drives, the other follows. On the corner the larger movement wins.
-        const drive = d.handle === 'se' ? (Math.abs(ddx) >= Math.abs(ddy) ? 'x' : 'y') : (d.handle === 'e' ? 'x' : 'y');
-        if (drive === 'x') {
-          let w = Math.max(8, d.w0 + ddx);
-          if (!e.shiftKey) { const f = fitSize(d.left, w, 'x', SNAP); w += f.d; s.x = f.edge; s.match = f.match; }
-          r.w = rnd(w); r.h = rnd(w / ratio);
-        } else {
-          let h = Math.max(8, d.h0 + ddy);
-          if (!e.shiftKey) { const f = fitSize(d.top, h, 'y', SNAP); h += f.d; s.y = f.edge; s.match = f.match; }
-          r.h = rnd(h); r.w = rnd(h * ratio);
-        }
+        // One axis drives, the other follows. On a corner the larger movement wins.
+        const drive = driveX && driveY ? (Math.abs(ddx) >= Math.abs(ddy) ? 'x' : 'y') : (driveX ? 'x' : 'y');
+        if (drive === 'x') { w = fitX(Math.max(8, d.w0 + sx)); h = w / ratio; }
+        else { h = fitY(Math.max(8, d.h0 + sy)); w = h * ratio; }
+        setW = setH = true;
       } else {
-        if (d.handle === 'e' || d.handle === 'se') {
-          let w = Math.max(8, d.w0 + ddx);
-          if (!e.shiftKey) { const f = fitSize(d.left, w, 'x', SNAP); w += f.d; s.x = f.edge; s.match = f.match; }
-          r.w = rnd(w);
-        }
-        if (d.handle === 's' || d.handle === 'se') {
-          let h = Math.max(8, d.h0 + ddy);
-          if (!e.shiftKey) { const f = fitSize(d.top, h, 'y', SNAP); h += f.d; s.y = f.edge; s.match = s.match || f.match; }
-          r.h = rnd(h);
-        }
+        if (driveX) { w = fitX(Math.max(8, d.w0 + sx)); setW = true; }
+        if (driveY) { h = fitY(Math.max(8, d.h0 + sy)); setH = true; }
       }
+      if (setW) r.w = rnd(w);
+      if (setH) r.h = rnd(h);
+      // Where the box now sits: a start edge that moved, or both edges around a fixed centre.
+      const gw = (setW ? r.w : d.w0) - d.w0, gh = (setH ? r.h : d.h0) - d.h0;
+      r.dx = rnd(centre ? d.dx0 - gw / 2 : hasW ? d.dx0 - gw : d.dx0);
+      r.dy = rnd(centre ? d.dy0 - gh / 2 : hasN ? d.dy0 - gh : d.dy0);
       apply(r); showGuides(s); updateBoxes();
       setStatus(withNotice(summary(r)));
     }
@@ -1362,7 +1421,7 @@
     $('nudge-reset').addEventListener('click', resetAll);
     $('nudge-close').addEventListener('click', (e) => { e.stopPropagation(); close(); });
     $('nudge-head').addEventListener('click', () => setCollapsed(!state.collapsed));
-    TYPE.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });
+    FIELDS.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });
     rootObserver.observe(root, { childList: true });
     hookHistory();
     overlay.style.display = 'none'; panel.style.display = 'none';

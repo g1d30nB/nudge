@@ -195,13 +195,14 @@ Whichever way it is added, the `data-nudge-dormant` attribute is what makes nudg
 - Click an element to select it. Clicks select the deepest element under the pointer, so clicking an image selects the `img`, not its `figure`. Clicking inside a selected element selects what you clicked; dragging moves the selected element.
 - **Hold Option and press the up arrow to select the parent** of the selected element: the wrapper around a heading, its copy and its image, which has no surface of its own to click. Press again for the next parent up. Option and the down arrow comes back. The panel's header shows what is selected each time.
 - Drag inside the selection to move it. Pink guides appear when an edge lines up with another element; release on a guide and the relationship is recorded.
-- Drag the right, bottom or corner handle to resize. The moving edge snaps to other elements' edges, and the width or height snaps when it matches another element's; a dashed box appears over the element you now match.
+- Drag any of the eight handles to resize. The moving edge snaps to other elements' edges, and the width or height snaps when it matches another element's; a dashed box appears over the element you now match. Dragging the left or top edge moves that edge, and the batch says so. Hold Command to resize from the centre.
+- The panel shows the selected element's width and height. Type a value, or step it with the arrow keys or the small arrows in the box: 1 at a time, 10 with Shift, a fine step with Option. Steps snap to other elements' sizes and edges, like a drag.
 - Hold **Option** while resizing to lock the aspect ratio, so the element scales instead of stretching. On the corner handle, whichever direction you move further drives the size and the other follows.
 - Arrow keys nudge 1px, Shift and an arrow nudges 10px. Backspace removes. Esc deselects.
 - Double-click a selected element to edit its text in place. Escape or a click elsewhere finishes. Only elements with no child elements can be edited, and only as plain text; the batch reports the old string and the new one.
 - With a text element selected, the panel shows its font size, line height, letter spacing and weight. Step them with the arrow keys or the small arrows that appear in each box: 1 at a time, 10 with Shift, a fine step with Option. A value that lands on another element's value snaps to it, and the batch says so: `font size 17px → 21px (now matches .lede)`.
 - The panel also shows the element's text colour, and its background colour where it already has one. Click either to open a palette built from the colour tokens declared on `:root`, with the current token marked. The batch reports token names, such as `colour var(--ink-muted) → var(--ink)`. The colour picker under the palette is for anything else, and the batch then says no token matched that value.
-- Hold Shift while dragging to disable snapping. Release with Shift held and no alignment is recorded; the move is taken as exact.
+- Hold Shift while dragging to disable snapping and, on a move, to keep to one axis. Release with Shift held and no alignment is recorded; the move is taken as exact.
 - Click the panel's header to collapse it to a single row while you work; the row shows how many changes you have made and keeps the Copy button. Click it again to see the list and the type and colour controls.
 - Changes stay on the page as a preview. Each change has its own undo, and Reset clears them all.
 - **Copy for Claude Code** puts the batch on the clipboard and marks those changes as sent: their rows dim and show a tick. The preview stays on the page, so if the paste does not take you can press **Re-copy**. Paste the batch into your agent as the whole message.
@@ -263,7 +264,6 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 - One viewport per batch. Every measurement is stamped with the viewport it was taken at; the agent decides whether the rule generalises.
 - No write-back. nudge describes changes; it never edits files.
 - A hot reload that rebuilds an element drops its preview. Copy before you save a file your dev server is watching.
-- Resize handles are right, bottom and corner only.
 - Text editing is plain text only, in elements with no child elements.
 - No font family control. nudge cannot see which fonts are installed or loaded.
 - Type values are read from the rendered page, so they are measured in pixels even when the source uses rem, em or clamp. The batch adds the rem equivalent for font size, the em equivalent for letter spacing and the ratio for line height, so the agent can match the source's units. A clamp() cannot be recovered.
