@@ -6,7 +6,8 @@ Public repo: https://github.com/g1d30nB/nudge (MIT). Install page: https://g1d30
 
 ## Files
 
-- `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr pinned to a release tag (`cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js`); the development bookmarklet, used while building, loads it from 127.0.0.1:7357.
+- `mod/`: the Claude Code plugin (`plugin.json`, `hooks/register.ts`, tests). It loads `nudge.js` from the CDN tag into the built-in browser and reads the batch back through the browser's JavaScript tool; nudge.js itself knows nothing about it. `.claude-plugin/marketplace.json` at the repo root lists it so `/plugin install nudge --marketplace g1d30nB/nudge` works. Test with `claude plugin test mod`; validate with `claude plugin validate mod`. The hot-reloading development copy lives outside the repo and loads nudge.js from 127.0.0.1:7357.
+- `nudge.js`: the whole tool. Vanilla JS, no build, no deps. The install bookmarklet loads it from jsDelivr pinned to a release tag (`cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js`); the development bookmarklet, used while building, loads it from 127.0.0.1:7357.
 - `bookmarklet.txt`: both loaders, labelled.
 - `docs/nudge-in-claude-code.gif`: the second README demo, nudge as a dot inside Claude Code's built-in browser (800px, 6fps, 64 colours, about 6.5MB; the 12MB original is on Gideon's Desktop).
 - `docs/nudge-demo.gif`: the README demo. Recorded on a throwaway wireframe page that is not in the repo (kept locally in `demo/`, gitignored). Keep it under about 5MB.
@@ -29,7 +30,7 @@ python3 -m http.server 7357 --bind 127.0.0.1
 
 ## Publishing
 
-Installed bookmarks load `cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js`, pinned to the `v1.2.1` tag. Bookmarks installed from earlier releases (v1.0.0, v1.1.0) stay on them until reinstalled. Pushes to `main` do not reach them. `main` still publishes the install page (GitHub Pages from `/docs`) and the README.
+Installed bookmarks load `cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js`, pinned to the `v1.3.0` tag. Bookmarks installed from earlier releases (v1.0.0 to v1.2.1) stay on them until reinstalled. Pushes to `main` do not reach them. `main` still publishes the install page (GitHub Pages from `/docs`) and the README.
 
 While building, use the development bookmarklet in `bookmarklet.txt`. It loads `nudge.js` from 127.0.0.1:7357, so serve this folder first.
 

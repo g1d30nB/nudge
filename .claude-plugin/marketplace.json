@@ -1,0 +1,14 @@
+{
+  "name": "nudge",
+  "owner": {
+    "name": "Gideon Bullock"
+  },
+  "plugins": [
+    {
+      "name": "nudge",
+      "source": "./mod",
+      "description": "nudge inside Claude Code's built-in browser: /nudge opens it, /nudge batch sends the batch."
+    }
+  ],
+  "description": "nudge for Claude Code: drag on the page in the built-in browser, send the batch, check what was applied."
+}

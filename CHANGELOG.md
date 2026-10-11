@@ -2,22 +2,55 @@
 
 Installed bookmarks are pinned to a release. To get a new release, reinstall the bookmark from the [install page](https://g1d30nb.github.io/nudge/).
 
-## Unreleased
+## v1.3.0, 11 October 2026
 
-### Added
+The biggest release since launch. Four areas: resizing, the responsive view, closing the loop with the agent, and saying what a change means. Every key and command is listed in the README under [Keys and commands](README.md#keys-and-commands).
 
-- **Resize from any edge.** Eight handles. Dragging the left or top edge moves that edge and the batch reports both the size and the move. Hold Command to resize from the centre.
-- **Width and height fields** in the panel, with steppers and snapping, for every selected element including images.
+### Resize from any edge
+
+- **Eight handles.** Drag any edge or corner. Dragging the left or top edge moves that edge and keeps the opposite one fixed; the batch reports both the new size and the move, so `width 360px → 460px` plus `moved left 100px` says exactly what happened.
+- **Command resizes from the centre.** Both edges move together. Option or Control locks the aspect ratio, as before; Command no longer does.
+- **Width and height fields** in the panel for every selected element, images included. Type a value, or step with the arrow keys or the small arrows in the box: 1 at a time, 10 with Shift, a fine step with Option. Steps snap to other elements' sizes and edges like a drag does.
 - **Shift locks a move to one axis** as well as disabling snapping.
-- `window.__nudge.take()`: returns the unsent batch and marks it sent, without the clipboard. For tools that read the page from outside, such as the Claude Code mod.
-- **Breakpoints.** nudge reads the page's width breakpoints from its stylesheets. A badge on the panel header shows the window width and the range it falls in; click it to draw the breakpoint lines on the page. The batch says which range it was measured in, and an element with rules at other widths gets a line saying where.
-- **Verify.** Sending a batch records what the page should measure once it is applied. After a reload, or when the preview is cleared, nudge measures again and reports what was applied and what was not. `window.__nudge.verify()` runs the check on demand.
-- **Crumbs, hover tag, x-ray.** The panel header shows the selection's ancestry, each step clickable. The hover box names the element and its size. `x` outlines every container in view.
-- **Component names.** Where React or Vue dev internals name the component that rendered an element, the batch adds `in <Hero>` (issue #10).
-- **Measure and set the gap.** Option-hover shows the distance between the selection and another element. Option-drag changes it, previewed through the rule that made the space, which the batch names (issue #14).
-- **Pin and match.** `p` pins an element, `m` makes the selection match it. **Apply to siblings** with `a`.
-- **Guardrails.** The batch flags a colour change that fails AA contrast, with the ratio, and a font size under 12px.
-- `window.__nudge.history()` returns every batch sent this page load. A second Re-copy says how to paste.
+- A click on a handle records nothing. Every drag waits for 3px of movement before it starts.
+
+### Breakpoints
+
+- **nudge reads your breakpoints** from the page's own stylesheets: `min-width`, `max-width` and the newer range syntax (`width >= 48rem`), in px, em or rem. Only width queries count.
+- **A badge on the panel header**, such as `1280 · 1200+`, shows the window width and the range it falls in. Click it to draw a labelled line at each breakpoint; click again to hide them. Resize the window and the badge follows.
+- **The batch says which range it was measured in**, on its second line. An element with media rules at other widths gets its own line, `different rules apply below 600px; this was measured in the 1200px and up range`, and the footer asks the agent to change the rule for that range unless the intent clearly applies everywhere.
+- A stylesheet the browser cannot read, such as one served from another domain, is counted and reported rather than guessed at.
+
+### Verify: did the agent do it?
+
+- **Sending a batch records what the page should measure** once the agent has applied it: sizes, positions, text and the type and colour values, taken with the preview in place.
+- **After a reload, or when you press Clear preview, nudge measures again** and shows a line under the header: `After the reload: 2 of 3 applied`, then `not applied: …` with the value now and the value wanted for anything missing. The record survives a full reload and dies with the tab.
+- `window.__nudge.verify()` runs the check on demand; `window.__nudge.take()` returns the unsent batch and marks it sent without the clipboard. Both exist for tools that drive nudge from outside, such as the Claude Code plugin below.
+
+### Reach: finding and naming things
+
+- **Crumbs.** The panel header shows the selection's ancestry, `section#hero > div.hero-copy > p.hero-subhead`, and each step is clickable. The quickest way to a wrapper.
+- **Hover tag.** The hover box names the element under the pointer and gives its size, so you know what a click will select before you click.
+- **X-ray.** Press `x` to outline every container on the page, which shows the boxes that have no surface of their own. Press `x` again to turn it off.
+- **Component names.** Where React or Vue leave the component name readable in dev mode, the batch entry adds `in <Hero>`. Svelte and Astro leave nothing readable, so those entries stay on the selector path.
+- **Measure.** With an element selected, hold Option and hover another to see the distance between them, or the insets when one contains the other.
+
+### Intent: saying what a change means
+
+- **Set the gap.** Hold Option and drag another element to change the space between it and the selection. nudge previews the change by editing the rule that made the space, the parent's `gap` or the larger facing margin, and the batch names that rule: `gap to div.card-a 24px → 40px (set by row-gap 24px on section#cards)`. The agent edits the gap, not the element's position.
+- **Pin and match.** Press `p` to pin the selected element, then select another and press `m` to make it match: width and height for boxes and images, font size, line height, letter spacing, weight and colour for text. The batch adds `make this match …: width, font size` and asks the agent to share the matched element's rule rather than copy its values.
+- **Apply to siblings.** Press `a` to apply the selected element's change to the elements beside it with the same tag and classes. The batch says `apply the same to its 2 siblings (3 × div.feature-card in total)` and that the change belongs on their shared rule. Press `a` again to release them.
+- **Guardrails.** A colour change that leaves text below the AA contrast minimum against its background is flagged with the ratio, in the status and the batch. A font size under 12px is flagged as small for body text.
+- **History.** `window.__nudge.history()` returns every batch sent this page load. A second press of Re-copy explains how to paste when the agent is not applying the batch.
+
+### Claude Code plugin
+
+- The repo now carries a plugin for Claude Code, in `mod/`, that puts nudge in the built-in browser with no bookmark and no paste: `/nudge` opens it, `/nudge batch` pulls the batch into the prompt box, `/nudge batch send` sends it, `/nudge at 390` resizes the pane, `/nudge dark` switches the colour scheme, `/nudge verify` checks what was applied, `/nudge history` lists what was sent. After a batch is sent, the plugin checks the page at the end of Claude's turn and prints the verdict under the answer. Install with `/plugin install nudge --marketplace g1d30nB/nudge` in a terminal session.
+
+### Fixed
+
+- Clicking inside a selected element selects what was clicked; only a drag moves (v1.2.1 behaviour, kept).
+- A focused size or type field now updates after a step.
 
 ## v1.2.1, 16 September 2026
 

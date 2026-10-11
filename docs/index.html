@@ -21,6 +21,10 @@
   .install p { margin: 0; font-size: 15px; }
   ol { margin: 0; padding-left: 20px; color: var(--ink-soft); }
   li { margin-bottom: 8px; }
+  ul { margin: 0 0 14px; padding-left: 20px; color: var(--ink-soft); }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 14px; font-size: 15px; color: var(--ink-soft); }
+  td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:first-child { white-space: nowrap; color: var(--ink); width: 34%; }
   code, pre { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   pre { margin: 0 0 14px; padding: 14px 16px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); white-space: pre; }
   a { color: var(--ink); }
@@ -34,7 +38,7 @@
   <p class="lede">Drag on the running page, then paste the measurements into your coding agent.</p>
 
   <div class="install">
-    <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
+    <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
     <p>Drag this button to your bookmarks bar. That is the whole install.</p>
   </div>
 
@@ -49,9 +53,44 @@
     <li>Click the bookmark again to close the panel.</li>
   </ol>
 
+  <h2>New in v1.3.0, 11 October 2026</h2>
+  <p>The biggest release since launch. Reinstall the bookmark above to get it; installed bookmarks are pinned to the release they came from.</p>
+  <ul>
+    <li><strong>Resize from any edge.</strong> Eight handles. Dragging the left or top edge moves that edge, and the batch reports the size and the move. Command resizes from the centre; Option locks the ratio. Width and height fields in the panel, with steppers that snap.</li>
+    <li><strong>Breakpoints.</strong> nudge reads your breakpoints from the page's stylesheets. A badge on the panel header shows the window width and the range it falls in; click it to draw the breakpoint lines. The batch says which range it was measured in, and flags an element that has different rules at other widths.</li>
+    <li><strong>Verify.</strong> Sending a batch records what the page should look like once the agent has applied it. After a reload, or when you press Clear preview, nudge measures again and tells you what was applied and what was not, with the value now and the value wanted.</li>
+    <li><strong>Find things.</strong> The header shows the selection's ancestry as clickable crumbs. The hover box names the element and its size. Press <code>x</code> to outline every container. Batches name the React or Vue component that rendered the element where dev mode leaves it readable.</li>
+    <li><strong>Measure and set gaps.</strong> Hold Option and hover another element to see the distance. Hold Option and drag it to change the gap: nudge edits the rule that made the space, the parent's gap or a margin, and the batch names it.</li>
+    <li><strong>Say what you mean.</strong> <code>p</code> pins an element, <code>m</code> makes the selection match it. <code>a</code> applies a change to all matching siblings. The batch carries the intent, so the agent changes the shared rule rather than copying values.</li>
+    <li><strong>Guardrails.</strong> A colour change that fails AA contrast is flagged with the ratio. A font size under 12px is flagged.</li>
+    <li><strong>Claude Code plugin.</strong> <code>/nudge</code> opens nudge in Claude Code's built-in browser, <code>/nudge batch</code> pulls the batch into the prompt, and the plugin checks the page after Claude's turn. See below.</li>
+  </ul>
+
+  <h2>Keys</h2>
+  <table>
+    <tr><td>Click</td><td>Select. Inside a selection, select what was clicked.</td></tr>
+    <tr><td>Drag</td><td>Move. Release on a pink guide to record the alignment.</td></tr>
+    <tr><td>Handles</td><td>Resize from any edge. Option locks the ratio, Command resizes from the centre.</td></tr>
+    <tr><td>Shift + drag</td><td>No snapping; a move keeps to one axis.</td></tr>
+    <tr><td>Arrows</td><td>Nudge 1px, 10px with Shift.</td></tr>
+    <tr><td>Option + ↑ / ↓</td><td>Select the parent, and come back down.</td></tr>
+    <tr><td>Backspace</td><td>Remove.</td></tr>
+    <tr><td>Double-click</td><td>Edit text in place.</td></tr>
+    <tr><td>Panel fields</td><td>Width, height, size, line height, spacing, weight. Type, or step with ↑ ↓ (Shift 10, Option fine).</td></tr>
+    <tr><td>Option + hover</td><td>Measure the distance to another element.</td></tr>
+    <tr><td>Option + drag another element</td><td>Change the gap between it and the selection.</td></tr>
+    <tr><td>p, m</td><td>Pin an element; make the selection match the pin.</td></tr>
+    <tr><td>a</td><td>Apply the change to matching siblings.</td></tr>
+    <tr><td>x</td><td>Outline every container.</td></tr>
+    <tr><td>Header badge</td><td>Draw the breakpoint lines.</td></tr>
+    <tr><td>Header crumbs</td><td>Select an ancestor.</td></tr>
+    <tr><td>Escape</td><td>Deselect.</td></tr>
+  </table>
+  <p>The full list, with the buttons and the page API, is in the <a href="https://github.com/g1d30nB/nudge#keys-and-commands">README</a>.</p>
+
   <h2>If you cannot drag the button</h2>
   <p>Create a new bookmark by hand and paste this line as its URL.</p>
-  <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
+  <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
 
   <h2>In your project, for Claude Code's browser</h2>
   <p>Claude Code's built-in browser has no bookmarks bar. Put nudge in the project instead and it loads as a small blue dot in the bottom left corner while you develop. Click the dot to open it. It is the same file, and it cannot reach your live site: the tag only exists in development, and nudge refuses to run anywhere but a local address.</p>
@@ -60,15 +99,30 @@
 
 nudge is a design-correction tool: https://github.com/g1d30nB/nudge. It is one script file. Add this tag to the layout or entry point that every page shares, so it is present when I run the dev server and absent from any production build:
 
-&lt;script src=&quot;https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js&quot; data-nudge-dormant&gt;&lt;/script&gt;
+&lt;script src=&quot;https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js&quot; data-nudge-dormant&gt;&lt;/script&gt;
 
 Rules:
 - Keep the data-nudge-dormant attribute exactly as written. Without it nudge opens a panel on every page load.
 - Guard the tag with this framework&#x27;s own development flag (for example import.meta.env.DEV, process.env.NODE_ENV === &#x27;development&#x27;, or import.meta.dev), so it cannot reach a production build. Do not rely on a runtime check instead.
-- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.2.1 into the public folder and point the tag at /nudge.js instead.
+- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.3.0 into the public folder and point the tag at /nudge.js instead.
 - Change nothing else.
 - When you are done, start the dev server, tell me which file you changed, and remind me that the small blue dot in the bottom left corner of the page opens nudge.</pre>
   <p>To take it out again: <em>Remove nudge from this project: delete the script tag and any code you added to load it.</em> Details and snippets for each framework are in the <a href="https://github.com/g1d30nB/nudge#putting-nudge-in-your-project">README</a>.</p>
+
+  <h2>The Claude Code plugin</h2>
+  <p>With the plugin, nudge needs no bookmark and no paste. In a terminal session of Claude Code:</p>
+  <pre>/plugin install nudge --marketplace g1d30nB/nudge</pre>
+  <p>Answer <code>y</code> to add the marketplace and choose the user scope. Then, with your dev server open in the browser pane:</p>
+  <table>
+    <tr><td><code>/nudge</code></td><td>Open nudge on the page in the pane. Again to close.</td></tr>
+    <tr><td><code>/nudge batch</code></td><td>Pull the batch into the prompt box.</td></tr>
+    <tr><td><code>/nudge batch send</code></td><td>Send it straight away.</td></tr>
+    <tr><td><code>/nudge at 390</code></td><td>Resize the pane. Also <code>at 1024x768</code>, <code>at mobile</code>, <code>tablet</code>, <code>desktop</code>.</td></tr>
+    <tr><td><code>/nudge dark</code></td><td>Dark colour scheme; <code>/nudge light</code> back.</td></tr>
+    <tr><td><code>/nudge verify</code></td><td>Report what the page shows of the last batch.</td></tr>
+    <tr><td><code>/nudge history</code></td><td>List every batch sent this page load.</td></tr>
+  </table>
+  <p>After a batch is sent, the plugin checks the page when Claude's turn ends and prints the verdict under the answer.</p>
 
   <footer>
     Source, limitations and how to contribute: <a href="https://github.com/g1d30nB/nudge">github.com/g1d30nB/nudge</a>. MIT licence.

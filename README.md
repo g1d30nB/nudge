@@ -33,13 +33,15 @@ A bookmark needs a bookmarks bar, so open the page you are working on in an ordi
 There is no clone, no server, no npm, and nothing is added to your project. The bookmark loads `nudge.js` from jsDelivr when you click it. If you would rather make the bookmark by hand, paste this line as its URL:
 
 ```
-javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
+javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
 ```
 
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.
 
 <a id="putting-nudge-in-your-project"></a>
 ## In your project: use nudge in Claude Code's built-in browser
+
+There are two ways. The [Claude Code plugin](#claude-code-plugin) needs no change to your project: `/nudge` opens nudge on whatever the browser pane shows. The script tag below puts nudge in the project itself, as a dot on every page while you develop, and works in any browser pointed at your dev server.
 
 The [bookmark](https://g1d30nb.github.io/nudge/) is how to try nudge. There are two reasons to go further and put nudge in the project itself.
 
@@ -63,12 +65,12 @@ Add nudge to this project so that it loads only while I am developing.
 
 nudge is a design-correction tool: https://github.com/g1d30nB/nudge. It is one script file. Add this tag to the layout or entry point that every page shares, so it is present when I run the dev server and absent from any production build:
 
-<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js" data-nudge-dormant></script>
+<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js" data-nudge-dormant></script>
 
 Rules:
 - Keep the data-nudge-dormant attribute exactly as written. Without it nudge opens a panel on every page load.
 - Guard the tag with this framework's own development flag (for example import.meta.env.DEV, process.env.NODE_ENV === 'development', or import.meta.dev), so it cannot reach a production build. Do not rely on a runtime check instead.
-- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.2.1 into the public folder and point the tag at /nudge.js instead.
+- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.3.0 into the public folder and point the tag at /nudge.js instead.
 - Change nothing else.
 - When you are done, start the dev server, tell me which file you changed, and remind me that the small blue dot in the bottom left corner of the page opens nudge.
 ```
@@ -98,7 +100,7 @@ If you would rather add it yourself, each snippet below uses that framework's ow
 In a layout, or `src/pages/index.astro`, before `</body>`. `is:inline` stops Astro bundling it.
 
 ```astro
-{import.meta.env.DEV && <script is:inline src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js" data-nudge-dormant></script>}
+{import.meta.env.DEV && <script is:inline src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js" data-nudge-dormant></script>}
 ```
 </details>
 
@@ -110,7 +112,7 @@ In `app/layout.tsx`, inside `<body>` after `{children}`.
 ```tsx
 {process.env.NODE_ENV === 'development' && (
   // eslint-disable-next-line @next/next/no-sync-scripts
-  <script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js" data-nudge-dormant="" />
+  <script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js" data-nudge-dormant="" />
 )}
 ```
 </details>
@@ -123,7 +125,7 @@ In `src/main.jsx` or `main.tsx`. Vite's `index.html` has no conditionals, so add
 ```js
 if (import.meta.env.DEV) {
   const s = document.createElement('script')
-  s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js'
+  s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js'
   s.setAttribute('data-nudge-dormant', '')
   document.body.appendChild(s)
 }
@@ -142,7 +144,7 @@ In `src/routes/+layout.svelte`. A `{#if dev}` block in markup keeps the tag out 
   onMount(() => {
     if (import.meta.env.DEV) {
       const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js';
+      s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js';
       s.setAttribute('data-nudge-dormant', '');
       document.body.appendChild(s);
     }
@@ -161,7 +163,7 @@ In `app/app.vue` or `app.vue`.
 ```vue
 <script setup lang="ts">
 if (import.meta.dev) {
-  useHead({ script: [{ src: 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js', 'data-nudge-dormant': '' }] })
+  useHead({ script: [{ src: 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js', 'data-nudge-dormant': '' }] })
 }
 </script>
 ```
@@ -173,14 +175,14 @@ if (import.meta.dev) {
 There is no build, so there is no development switch and no first safeguard. Put the tag before `</body>` and remove it before you deploy. The address check would stop nudge running on a live domain, but do not rely on it; take the line out.
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.2.1/nudge.js" data-nudge-dormant></script>
+<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js" data-nudge-dormant></script>
 ```
 </details>
 
 <details>
 <summary>Self-hosting, for projects that block outside scripts</summary>
 
-Download `nudge.js` from the [release](https://github.com/g1d30nB/nudge/releases/tag/v1.2.1), put it in the project's public folder, and point the tag at `/nudge.js`. Same file, same guard, same attribute.
+Download `nudge.js` from the [release](https://github.com/g1d30nB/nudge/releases/tag/v1.3.0), put it in the project's public folder, and point the tag at `/nudge.js`. Same file, same guard, same attribute.
 
 ```html
 <script src="/nudge.js" data-nudge-dormant></script>
@@ -218,6 +220,61 @@ Whichever way it is added, the `data-nudge-dormant` attribute is what makes nudg
 Work a section, copy, let the agent apply it, clear the preview, check the result, then move to the next section.
 
 A hot reload that only swaps stylesheets leaves nudge's preview in place, which can make an agent's change look as if it worked when it did not. When that happens while changes are marked sent, the panel says "The page reloaded. Clear the preview to see the real result." A reload that rebuilds an element drops its preview instead.
+
+## Keys and commands
+
+Everything nudge does from the keyboard, with an element selected unless the row says otherwise.
+
+| Key | What it does |
+|---|---|
+| Click | Select the deepest element under the pointer. Inside a selection, select what was clicked. |
+| Drag | Move the selection. Pink guides mark alignments; release on one to record it. |
+| Handles | Resize from any edge or corner. Left and top edges move that edge and the batch says so. |
+| Option + drag a handle | Lock the aspect ratio. Control works too. |
+| Command + drag a handle | Resize from the centre. |
+| Shift + drag | No snapping. On a move, keep to one axis. |
+| Arrows | Nudge 1px. Shift and an arrow: 10px. |
+| Option + ↑ / ↓ | Select the parent, then come back down. |
+| Backspace | Remove the element. |
+| Double-click | Edit the text in place. Escape or a click elsewhere finishes. |
+| Panel fields | Width, height, font size, line height, letter spacing, weight. Type a value, or step with ↑ ↓: 1, Shift 10, Option a fine step. Steps snap. |
+| Colour chips | Open a palette of the page's `:root` tokens; the picker underneath is for anything else. |
+| Option + hover | Measure the distance to another element, or the insets inside a parent. |
+| Option + drag another element | Change the gap between it and the selection. Previewed and reported through the rule that made the space. |
+| p | Pin the selection. Press again on the pin to remove it. |
+| m | Make the selection match the pinned element. |
+| a | Apply the selection's change to its siblings with the same tag and classes. Press again to release. |
+| x | Outline every container on the page (no selection needed). Press again to hide. |
+| Header badge | Click to draw the page's breakpoint lines. |
+| Header crumbs | Click a step to select that ancestor. |
+| Header | Click to collapse the panel to one row; click again to expand. |
+| Escape | Deselect. |
+
+Buttons: **Copy for Claude Code** copies the unsent changes and marks them sent. It becomes **Clear preview** once everything is sent, which reverts the preview and reports what the page now shows of the batch. **Re-copy** copies the last batch again. **Reset** reverts everything. **×** closes.
+
+The page's API, for tools that drive nudge from outside: `window.__nudge.take()` (the unsent batch, marked sent), `verify()` (measure the page against the last batch), `history()` (every batch sent), `breakpoints()`, `report()`, `wake()`, `sleep()`, `toggle()`, `close()`, `destroy()`.
+
+### Claude Code plugin
+
+With the plugin installed, nudge works in Claude Code's built-in browser with no bookmark and no paste. In a terminal session:
+
+```
+/plugin install nudge --marketplace g1d30nB/nudge
+```
+
+Answer `y` to add the marketplace, then choose the user scope. Then, with your dev server open in the browser pane:
+
+| Command | What it does |
+|---|---|
+| `/nudge` | Open nudge on the page in the browser pane. Again to close it. |
+| `/nudge batch` | Pull the unsent batch into the prompt box, ready to send. |
+| `/nudge batch send` | Send it straight away. |
+| `/nudge at 390` | Resize the pane to 390px wide. Also `/nudge at 1024x768`, `/nudge at mobile`, `tablet`, `desktop`. |
+| `/nudge dark` and `/nudge light` | Switch the pane's colour scheme. |
+| `/nudge verify` | Measure the page against the last batch and report what was applied. |
+| `/nudge history` | List every batch sent this page load, with the last one in full. |
+
+After a batch is sent, the plugin checks the page when Claude's turn ends and prints the verdict under the answer. When the pane navigates to another page of your site, the plugin loads nudge there again.
 
 ## What it is good at
 
