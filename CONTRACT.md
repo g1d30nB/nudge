@@ -93,6 +93,11 @@ All pass/fail. No subjective checks.
 | 68 | Command from the centre; handle click | Command-drag of the east handle +50 → width +100, dx −50, centre unchanged. A mouse-down and up on a handle without movement records nothing and keeps the selection |
 | 69 | Shift axis lock | A Shift-drag of (30, 8) records dx 30, dy 0; a following Shift-drag of (5, 40) keeps dx 30 and records dy 40 |
 | 70 | Size fields | Typing 517 and Enter sets width 517; three ArrowUps reach 520 and the batch names the width match with `.card-b`; ArrowUp in height adds 1. The size row shows for an image, where the type row does not |
+| 71 | Breakpoints read | The fixture's `max-width: 599px`, `min-width: 900px` and `(width >= 75rem)` give `breakpoints()` points [600, 900, 1200]; at 1280 the range is "1200px and up", the badge reads `1280 · 1200+`, and the batch's second line is `measured at 1280px wide, in the 1200px and up range (breakpoints at 600, 900, 1200px)`; at 800 the badge reads `800 · 600–899`, at 500 `500 · <600` |
+| 72 | Responsive note | An element with rules below 600px gets `different rules apply below 600px; this was measured in the 1200px and up range` and the footer gains the responsive line; an element with no media rules gets neither; at 1000px an element with a 1200px-and-up rule gets `different rules apply from 1200px` |
+| 73 | Breakpoint lines | Clicking the badge draws one labelled dashed line per breakpoint inside the viewport, at x = breakpoint − 1, without collapsing the panel; at 800 only the 600 line remains; a second click hides them |
+| 74 | Verify after reload | Two changes sent with `take()` (card-a to 520, card-b moved 2px right); the served CSS gains the width only; after reload `verify('reload')` reports `1 of 2 applied` and names card-b's left edge, now and wanted; the verdict shows in the panel on wake and a new change hides it; once both are applied a reload reports `2 of 2`, the stored expectation is removed and a further reload reports nothing |
+| 75 | Verify on Clear preview | After Copy, a hot style swap that applies the width, then Clear preview, shows `Preview cleared: 1 of 1 applied.`; a second batch cleared without any change shows `0 of 1 applied` with the width now and wanted, and keeps the expectation |
 
 ## Test Plan
 
@@ -203,6 +208,14 @@ A Claude Code mod can load nudge into the built-in browser and read its batch ba
 Eight handles. A start edge (west, north) changes size and position together: the batch already separates sizes from moves, so `width 360px → 460px` plus `moved left 100px` says it. `fitSize` takes the moving side, so the left and top edges snap too, and at release a start edge that moved is checked for alignment. Command resizes from the centre (both edges move, no snapping); Option or Control locks the ratio; Command no longer locks. Shift on a move locks the dominant axis as well as disabling snapping. Every drag, resize included, waits for 3px of movement before recording, so a click on a handle neither records nor clears a sent preview; with corner handles over the element's corners, check 27's padding click would otherwise have cleared its sent change. Width and height fields with steppers sit in their own row, shown for every selection, images included, because the type-and-colour section is hidden for images by check 37.
 
 First run: one failure, a test helper scoped to the wrong row, then one real: a focused size field did not update after a step. 70/70, stable over `--repeat-each 3`. No existing test changed.
+
+## Responsive: breakpoints and verify (11 Oct 2026, branch feat/responsive, checks 71–75)
+
+A batch measured at one width said nothing about the others. nudge now reads the page's width breakpoints from its stylesheets (`min-width`, `max-width` and range syntax, px, em and rem), names the range the current width falls in on a header badge and on the batch's second line, and adds a per-element line where media rules for that element apply at other widths. Clicking the badge draws the breakpoint lines on the page. Only width queries count; a stylesheet the browser cannot read is counted and reported, not guessed at.
+
+Verify closes the loop. Sending a batch records what the page should measure once applied, in sessionStorage; after a reload, or when the preview is cleared, nudge measures again and reports what was applied and what was not, naming the value now and the value wanted. The Claude Code mod runs the same check after the turn that applied a batch and prints the verdict beneath the answer; `/nudge verify` runs it on demand and `/nudge at 390` resizes the pane.
+
+First run: three failures, all in the new tests (a line check made before the resize event had fired, and two snippets quoted from memory). 75/75, stable over `--repeat-each 3`. No existing test changed.
 
 ## Expected first failures
 

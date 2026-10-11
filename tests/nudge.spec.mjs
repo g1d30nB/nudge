@@ -1495,3 +1495,135 @@ test('70 width and height fields: typed values apply, steps snap to another elem
   await expect(page.locator('#nudge-props')).toBeHidden();
   await expect(sizeField(page, 'w')).toHaveValue('320');
 });
+
+/* ───────────── responsive: breakpoints and verify (checks 71–75) ───────────── */
+
+const BP = '[data-test=bp-box]';
+const BPW = '[data-test=bp-wide]';
+const vpBadge = (page) => page.locator('#nudge-vp');
+const bpLines = (page) => page.evaluate(() => [...window.__nudge._state.els.bpLayer.querySelectorAll('[data-breakpoint]')].map((l) => ({ at: Number(l.dataset.breakpoint), x: Math.round(l.getBoundingClientRect().left), label: l.textContent })));
+const verdict = (page) => page.locator('#nudge-verdict');
+
+test('71 breakpoints are read from the page\'s media queries, in px and rem, and name the current range', async ({ page }) => {
+  await inject(page);
+  const bp = await page.evaluate(() => window.__nudge.breakpoints());
+  expect(bp).toEqual({ points: [600, 900, 1200], unreadable: 0, range: '1200px and up' });
+  await expect(vpBadge(page)).toHaveText('1280 · 1200+');
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 40);
+  const lines = await reportLines(page);
+  expect(lines[1]).toBe('measured at 1280px wide, in the 1200px and up range (breakpoints at 600, 900, 1200px)');
+  await page.setViewportSize({ width: 800, height: 720 });
+  await expect(vpBadge(page)).toHaveText('800 · 600–899');
+  expect((await page.evaluate(() => window.__nudge.breakpoints())).range).toBe('600px to 899px');
+  await page.setViewportSize({ width: 500, height: 720 });
+  await expect(vpBadge(page)).toHaveText('500 · <600');
+});
+
+test('72 an element with rules at other widths gets a note and the footer; one without gets neither', async ({ page }) => {
+  await inject(page);
+  await select(page, BP);
+  await resizeE(page, BP, 40);
+  let lines = await reportLines(page);
+  expect(lines).toContain('different rules apply below 600px; this was measured in the 1200px and up range');
+  expect(lines).toContain('Where an element has different rules at other widths, change the rule for the range it was measured in unless the intent clearly applies everywhere.');
+  await page.locator('#nudge-reset').click();
+  await select(page, TAGLINE);
+  await resizeE(page, TAGLINE, 40);
+  lines = await reportLines(page);
+  expect(lines.some((l) => l.startsWith('different rules apply'))).toBe(false);
+  expect(lines.some((l) => l.startsWith('Where an element has different rules'))).toBe(false);
+  // A rule that applies only from 1200px is "from" when measured below it.
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await page.locator('#nudge-reset').click();
+  await select(page, BPW);
+  await resizeE(page, BPW, 40);
+  lines = await reportLines(page);
+  expect(lines).toContain('different rules apply from 1200px; this was measured in the 900px to 1199px range');
+});
+
+test('73 the viewport badge toggles breakpoint lines, drawn at each breakpoint inside the viewport', async ({ page }) => {
+  await inject(page);
+  expect(await bpLines(page)).toEqual([]);
+  await vpBadge(page).click();
+  expect(await page.evaluate(() => window.__nudge._state.bpLines)).toBe(true);
+  expect(await page.evaluate(() => window.__nudge._state.collapsed)).toBe(false);   // the badge click did not collapse the panel
+  expect(await bpLines(page)).toEqual([
+    { at: 600, x: 599, label: '600' }, { at: 900, x: 899, label: '900' }, { at: 1200, x: 1199, label: '1200' },
+  ]);
+  await page.setViewportSize({ width: 800, height: 720 });
+  await expect.poll(async () => (await bpLines(page)).map((l) => l.at)).toEqual([600]);
+  await vpBadge(page).click();
+  expect(await bpLines(page)).toEqual([]);
+  expect(await page.evaluate(() => getComputedStyle(window.__nudge._state.els.bpLayer).display)).toBe('none');
+});
+
+// Serve the fixture with a dormant tag and a CSS patch the test can change between loads, as a dev server
+// would after the agent edits the source.
+async function serveMutable(page, origin) {
+  const patch = { css: '' };
+  await page.route(`${origin}/**`, async (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === '/nudge.js') return route.fulfill({ contentType: 'text/javascript', body: await readFile(NUDGE, 'utf8') });
+    let html = await readFile(path.join(here, 'fixture.html'), 'utf8');
+    html = html.replace('</style>', `${patch.css}\n</style>`).replace('</body>', `<script src="${origin}/nudge.js" data-nudge-dormant></script>\n</body>`);
+    return route.fulfill({ contentType: 'text/html', body: html });
+  });
+  await page.goto(`${origin}/fixture.html`);
+  return patch;
+}
+
+test('74 after a reload, nudge measures the last batch against the page and says what was applied', async ({ page }) => {
+  const origin = 'http://localhost:4173';
+  const patch = await serveMutable(page, origin);
+  await page.evaluate(() => window.__nudge.wake());
+  await select(page, '[data-test=card-a]');
+  await resizeE(page, '[data-test=card-a]', 160);               // snaps to card-b's 520px
+  expect((await changes(page))[0].w).toBe(520);
+  await select(page, '[data-test=card-b]');
+  await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight');
+  const sent = await page.evaluate(() => window.__nudge.take());
+  expect(sent).toContain('width 360px → 520px');
+  const cardBLeft = await page.evaluate(() => Math.round(document.querySelector('[data-test=card-b]').getBoundingClientRect().left + scrollX)) - 2;   // the preview moved it 2px
+  // The agent applies the width but not the move; the dev server reloads the page.
+  patch.css = '.card-a { width: 520px; }';
+  await page.reload();
+  const v = await page.evaluate(() => window.__nudge.verify('reload'));
+  expect(v.applied).toBe(1); expect(v.total).toBe(2);
+  expect(v.text).toBe(`After the reload: 1 of 2 applied.\nnot applied: section#cards > div.card.card-b "The wider card. Its width …ap targets for resize.": left edge is at ${cardBLeft}px, wanted ${cardBLeft + 2}px`);
+  await page.evaluate(() => window.__nudge.wake());
+  await expect(verdict(page)).toBeVisible();
+  await expect(verdict(page)).toContainText('1 of 2 applied');
+  // A new change clears the verdict; the unfinished expectation survives a further reload until it is met.
+  await select(page, TAGLINE);
+  await page.keyboard.press('ArrowRight');
+  await expect(verdict(page)).toBeHidden();
+  await page.locator('#nudge-reset').click();
+  patch.css = '.card-a { width: 520px; } .card-b { margin-left: 82px; }';
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.__nudge._state.verdict)).toBe('After the reload: 2 of 2 applied.');
+  expect(await page.evaluate(() => sessionStorage.getItem('nudge:expect'))).toBeNull();
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.__nudge._state.verdict)).toBeNull();
+});
+
+test('75 Clear preview measures the live page against the sent batch without a reload', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=card-a]');
+  await resizeE(page, '[data-test=card-a]', 160);
+  await copyAndSettle(page);
+  await expect(verdict(page)).toBeHidden();
+  // The agent's change arrives through a hot stylesheet swap.
+  await page.evaluate(() => { const s = document.createElement('style'); s.textContent = '.card-a { width: 520px; }'; document.head.appendChild(s); });
+  await page.locator('#nudge-copy').click();
+  await expect(status(page)).toHaveText('Preview cleared. This is the live page.');
+  await expect(verdict(page)).toHaveText('Preview cleared: 1 of 1 applied.');
+  expect(await rect(page, '[data-test=card-a]').then((b) => Math.round(b.width))).toBe(520);
+  // Without the agent's change the verdict says so, and keeps the expectation for a later check.
+  await select(page, '[data-test=card-b]');
+  await resizeE(page, '[data-test=card-b]', 30);
+  await copyAndSettle(page);
+  await page.locator('#nudge-copy').click();
+  await expect(verdict(page)).toHaveText('Preview cleared: 0 of 1 applied.\nnot applied: section#cards > div.card.card-b "The wider card. Its width …ap targets for resize.": width is 520px, wanted 550px');
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('nudge:expect')).items.length)).toBe(1);
+});

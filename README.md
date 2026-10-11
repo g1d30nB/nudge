@@ -204,9 +204,10 @@ Whichever way it is added, the `data-nudge-dormant` attribute is what makes nudg
 - The panel also shows the element's text colour, and its background colour where it already has one. Click either to open a palette built from the colour tokens declared on `:root`, with the current token marked. The batch reports token names, such as `colour var(--ink-muted) → var(--ink)`. The colour picker under the palette is for anything else, and the batch then says no token matched that value.
 - Hold Shift while dragging to disable snapping and, on a move, to keep to one axis. Release with Shift held and no alignment is recorded; the move is taken as exact.
 - Click the panel's header to collapse it to a single row while you work; the row shows how many changes you have made and keeps the Copy button. Click it again to see the list and the type and colour controls.
+- The badge on the header, such as `1280 · 1200+`, is the width of the browser window and the range of your own breakpoints it falls in. nudge reads the breakpoints from the page's stylesheets. Click the badge to draw a line at each breakpoint, so you can see where a layout changes; click again to hide them. Narrow the window and the badge follows.
 - Changes stay on the page as a preview. Each change has its own undo, and Reset clears them all.
 - **Copy for Claude Code** puts the batch on the clipboard and marks those changes as sent: their rows dim and show a tick. The preview stays on the page, so if the paste does not take you can press **Re-copy**. Paste the batch into your agent as the whole message.
-- Once your agent has applied the batch, press **Clear preview**. It removes nudge's preview so you see the page as your code now renders it.
+- Once your agent has applied the batch, press **Clear preview**. It removes nudge's preview so you see the page as your code now renders it, and checks the result: a line under the header says how many of the batch's changes the page now shows, and names any that it does not, with the value now and the value wanted. The same check runs when the page reloads, so a bookmark click after a reload tells you whether the agent's edit took.
 - Changes you make after copying are copied on their own next time, so the agent never receives the same change twice. If you drag an element that is already marked sent, nudge clears its preview first and starts again from the live page, and says so.
 - While nudge is open, links do not navigate and the right-click menu is suppressed. Close nudge before inspecting an element.
 
@@ -226,6 +227,7 @@ A batch from the demo page after widening the hero subhead and dragging the port
 
 ```
 nudge batch · http://localhost:4321/ · viewport 1440×900 · 2026-09-14 10:00
+measured at 1440px wide, in the 1024px and up range (breakpoints at 640, 1024px)
 
 1. div.wrap.hero-inner > div.hero-copy > p.hero-subhead (src/components/Hero.astro:14:7) "Turn scattered notes into … what moved by Friday."
    width 400px → 558px (was capped by max-width: 400px)
@@ -240,6 +242,8 @@ Apply these in source CSS and markup, in the files named above where given. Do n
 A move that aligns with another element is a layout intent: express it with align-self, margin auto, grid placement or similar, never a transform or absolute offset.
 Widths were measured at this viewport; keep them responsive (max-width or percentage) unless a fixed width is clearly correct.
 ```
+
+The second line says which of the page's own breakpoint ranges the batch was measured in. Where an element has media rules at other widths the entry says so, for example `different rules apply below 640px; this was measured in the 1024px and up range`, and the footer asks the agent to change the rule for that range unless the intent clearly applies everywhere.
 
 Each entry names the element by its selector path and a snippet of its text, then lists what changed and what it now lines up with. The closing lines tell the agent how to translate those into CSS, and a batch only carries the lines that apply to it: no spacing guidance without an unaligned move, no removal guidance without a removal.
 
@@ -261,7 +265,7 @@ Images, video, canvas, SVG and iframes have an intrinsic shape. Resize one off i
 
 ## Limitations
 
-- One viewport per batch. Every measurement is stamped with the viewport it was taken at; the agent decides whether the rule generalises.
+- One viewport per batch. Every measurement is stamped with the viewport and the breakpoint range it was taken in; the agent decides whether the rule generalises. Breakpoints come only from stylesheets the browser lets the page read; a cross-origin sheet is counted and reported, not guessed at.
 - No write-back. nudge describes changes; it never edits files.
 - A hot reload that rebuilds an element drops its preview. Copy before you save a file your dev server is watching.
 - Text editing is plain text only, in elements with no child elements.

@@ -55,6 +55,10 @@
     dotHidden: false,       // Option-click on the dot hides it until the page reloads
     collapsed: false,       // panel folded to its header and buttons, so the page stays visible while working
     climbed: [],            // elements passed on the way up with Option+ArrowUp, so Option+ArrowDown can return
+    bp: null,               // breakpoints read from the page's stylesheets, cached until they reload
+    bpLines: false,         // breakpoint lines drawn on the overlay
+    verdict: null,          // after a reload or a cleared preview: what the agent applied of the last batch
+    expect: null,           // the last sent batch's expected measurements, mirrored in sessionStorage
   };
 
   const SENT = 'Sent. Clear the preview once your agent has applied it.';
@@ -68,6 +72,7 @@
     colour: 'A colour change names a design token: use that token. A value with no token is a question for the design system, not an instruction to hard-code it.',
     text: 'A text change replaces the old string with the new one wherever that copy lives: markup, a component, a content file or a translation.',
     removals: 'Removals delete the element from the markup.',
+    responsive: 'Where an element has different rules at other widths, change the rule for the range it was measured in unless the intent clearly applies everywhere.',
   };
 
   /* ────────────────────────── helpers ────────────────────────── */
@@ -164,6 +169,7 @@
     el.style.transition = 'none';
     if (c.maxWidth !== 'none') r.base.capped = heldByMaxWidth(el);
     state.changes.set(el, r);
+    if (state.verdict) { state.verdict = null; render(); }
     return r;
   }
 
@@ -614,6 +620,221 @@
     return out;
   }
 
+  /* ────────────────────────── breakpoints ────────────────────────── */
+
+  // The page's own width breakpoints, read from its stylesheets. Each is the first viewport width at which a
+  // different set of rules applies: min-width 768px and max-width 767px both mean 768. Tailwind v4 writes
+  // range syntax in rem, so both forms are parsed and rem and em resolve against the root font size.
+  const rootPx = () => parseFloat(cs(document.documentElement).fontSize) || 16;
+  function lengthPx(v) {
+    const m = /^\s*(-?\d*\.?\d+)\s*(px|r?em)?\s*$/i.exec(v);
+    if (!m) return null;
+    const n = parseFloat(m[1]);
+    return m[2] && /em/i.test(m[2]) ? n * rootPx() : n;
+  }
+  // Each "(…)" width condition → the ranges [lo, hi] of viewport widths it covers. hi is inclusive.
+  function widthRange(q) {
+    let m;
+    if ((m = /\(\s*min-width\s*:\s*([^)]+)\)/i.exec(q))) { const n = lengthPx(m[1]); return n == null ? null : [Math.ceil(n), Infinity]; }
+    if ((m = /\(\s*max-width\s*:\s*([^)]+)\)/i.exec(q))) { const n = lengthPx(m[1]); return n == null ? null : [0, Math.floor(n)]; }
+    if ((m = /\(\s*([^<>=()]+?)\s*(<=|<)\s*width\s*(<=|<)\s*([^<>=()]+?)\s*\)/i.exec(q))) {
+      const a = lengthPx(m[1]), b = lengthPx(m[4]);
+      if (a == null || b == null) return null;
+      return [m[2] === '<' ? Math.floor(a) + 1 : Math.ceil(a), m[3] === '<' ? Math.ceil(b) - 1 : Math.floor(b)];
+    }
+    if ((m = /\(\s*width\s*(>=|>|<=|<)\s*([^)]+)\)/i.exec(q))) {
+      const n = lengthPx(m[2]); if (n == null) return null;
+      if (m[1] === '>=') return [Math.ceil(n), Infinity];
+      if (m[1] === '>') return [Math.floor(n) + 1, Infinity];
+      if (m[1] === '<=') return [0, Math.floor(n)];
+      return [0, Math.ceil(n) - 1];
+    }
+    if ((m = /\(\s*([^<>=()]+?)\s*(>=|>)\s*width\s*\)/i.exec(q))) { const n = lengthPx(m[1]); return n == null ? null : [0, m[2] === '>' ? Math.ceil(n) - 1 : Math.floor(n)]; }
+    if ((m = /\(\s*([^<>=()]+?)\s*(<=|<)\s*width\s*\)/i.exec(q))) { const n = lengthPx(m[1]); return n == null ? null : [m[2] === '<' ? Math.floor(n) + 1 : Math.ceil(n), Infinity]; }
+    return null;
+  }
+  // A media list is comma-separated alternatives; each alternative's width conditions intersect.
+  function mediaRanges(text) {
+    const out = [];
+    for (const alt of text.split(',')) {
+      const conds = alt.match(/\([^()]*\)/g) || [];
+      let lo = 0, hi = Infinity, any = false;
+      for (const c of conds) { const r = widthRange(c); if (r) { any = true; lo = Math.max(lo, r[0]); hi = Math.min(hi, r[1]); } }
+      if (any && lo <= hi) out.push([lo, hi]);
+    }
+    return out;
+  }
+
+  function readBreakpoints() {
+    const rules = [];      // { lo, hi, selectors[] }
+    let unreadable = 0;
+    const walk = (list, inherited) => {
+      for (const rule of list) {
+        if (rule.type === 4 || rule.type === 3) {        // @media, @import
+          const text = rule.media ? rule.media.mediaText : '';
+          const ranges = mediaRanges(text);
+          const inner = rule.cssRules || (rule.styleSheet && safeRules(rule.styleSheet));
+          if (!inner) { if (rule.type === 3) unreadable++; continue; }
+          // Only widths matter here; a query with no width condition inherits the enclosing range.
+          const scope = ranges.length ? ranges : (inherited ? [inherited] : []);
+          if (ranges.length) ranges.forEach(([lo, hi]) => { if (lo > 0 || hi < Infinity) rules.push({ lo, hi, selectors: collectSelectors(inner) }); });
+          scope.length ? scope.forEach((r) => walk(inner, r)) : walk(inner, inherited);
+        } else if (rule.cssRules) walk(rule.cssRules, inherited);  // @supports, @layer and friends
+      }
+    };
+    const collectSelectors = (list) => { const out = []; for (const r of list) { if (r.selectorText) out.push(r.selectorText); else if (r.cssRules && r.type !== 4) out.push(...collectSelectors(r.cssRules)); } return out; };
+    const safeRules = (sheet) => { try { return sheet.cssRules; } catch (_) { return null; } };
+    for (const sheet of document.styleSheets) {
+      if (sheet.ownerNode && isTool(sheet.ownerNode)) continue;
+      const list = safeRules(sheet);
+      if (!list) { unreadable++; continue; }
+      const own = sheet.media && sheet.media.mediaText ? mediaRanges(sheet.media.mediaText) : [];
+      if (own.length) own.forEach(([lo, hi]) => { if (lo > 0 || hi < Infinity) rules.push({ lo, hi, selectors: collectSelectors(list) }); walk(list, [lo, hi]); });
+      else walk(list, null);
+    }
+    const points = new Set();
+    rules.forEach(({ lo, hi }) => { if (lo > 0) points.add(lo); if (hi < Infinity) points.add(hi + 1); });
+    return { points: [...points].sort((a, b) => a - b), rules, unreadable };
+  }
+  const breakpoints = () => (state.bp || (state.bp = readBreakpoints()));
+
+  // The range the current width sits in, described in words: "768px and up", "below 600px", "600px to 899px".
+  function rangeOf(width, points = breakpoints().points) {
+    let lo = 0, hi = Infinity;
+    for (const p of points) { if (p <= width) lo = p; else { hi = p; break; } }
+    return { lo, hi, text: hi === Infinity ? (lo ? `${lo}px and up` : 'all widths') : lo ? `${lo}px to ${hi - 1}px` : `below ${hi}px` };
+  }
+
+  // Widths at which this element's rules differ from the current range, as a sentence or ''.
+  function responsiveNote(el, width = innerWidth) {
+    const { rules } = breakpoints();
+    const cur = rangeOf(width);
+    const below = new Set(), above = new Set();
+    for (const { lo, hi, selectors } of rules) {
+      if (lo <= width && width <= hi) continue;                    // these rules already apply at this width
+      if (!selectors.some((s) => { try { return el.matches(s); } catch (_) { return false; } })) continue;
+      if (hi < width) below.add(hi + 1); else above.add(lo);
+    }
+    const bits = [];
+    if (below.size) bits.push(`below ${Math.max(...below)}px`);
+    if (above.size) bits.push(`from ${Math.min(...above)}px`);
+    return bits.length ? `different rules apply ${bits.join(' and ')}; this was measured in the ${cur.text} range` : '';
+  }
+
+  function viewportLine() {
+    const { points, unreadable } = breakpoints();
+    const w = innerWidth;
+    if (!points.length) return unreadable ? `measured at ${w}px wide; ${unreadable} stylesheet${unreadable > 1 ? 's' : ''} could not be read for breakpoints` : `measured at ${w}px wide; the page has no width breakpoints`;
+    return `measured at ${w}px wide, in the ${rangeOf(w).text} range (breakpoints at ${points.join(', ')}px${unreadable ? `, ${unreadable} stylesheet${unreadable > 1 ? 's' : ''} unreadable` : ''})`;
+  }
+
+  /* ────────────────────────── verify ────────────────────────── */
+
+  // When a batch is sent, nudge remembers what the page should look like once the agent has applied it: the
+  // sizes, positions, text and values measured with the previews in place. After the page reloads, or when
+  // the preview is cleared, it measures again and says what was applied and what was not. The record lives
+  // in sessionStorage so it survives a full reload, and dies with the tab.
+  const EXPECT_KEY = 'nudge:expect', EXPECT_TTL = 30 * 60 * 1000;
+  const VERIFY_KEYS = ['fontSize', 'lineHeight', 'letterSpacing', 'fontWeight', 'color', 'backgroundColor'];
+
+  // A selector that finds the element again after a reload: the nearest id, then nth-child steps.
+  function pathTo(el) {
+    const esc = (s) => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/[^\w-]/g, '\\$&'));
+    const parts = [];
+    let cur = el;
+    while (cur && cur !== document.documentElement) {
+      if (cur.id) { parts.unshift('#' + esc(cur.id)); break; }
+      const parent = cur.parentElement;
+      if (!parent) break;
+      parts.unshift(`${cur.tagName.toLowerCase()}:nth-child(${[...parent.children].indexOf(cur) + 1})`);
+      cur = parent;
+    }
+    return parts.join(' > ');
+  }
+
+  function expectation(r) {
+    const el = r.el;
+    const item = { path: pathTo(el), desc: descriptor(el), name: descriptor(el) + (snippet(el) ? ' ' + snippet(el) : ''), checks: {} };
+    if (r.removed) { item.checks.removed = true; return item; }
+    const b = el.getBoundingClientRect(), c = cs(el);
+    if (r.w != null) item.checks.width = rnd(b.width);
+    if (r.h != null) item.checks.height = rnd(b.height);
+    if (r.dx) item.checks.left = rnd(b.left + scrollX);
+    if (r.dy) item.checks.top = rnd(b.top + scrollY);
+    if (r.text != null) item.checks.text = collapse(r.text);
+    VERIFY_KEYS.forEach((k) => { if ((r.type && r.type[k]) || (r.colour && r.colour[k])) item.checks[k] = c[k]; });
+    return item;
+  }
+
+  const expectUrl = () => location.pathname + location.search;
+  function loadExpect() {
+    try {
+      const d = JSON.parse(sessionStorage.getItem(EXPECT_KEY) || 'null');
+      return d && d.url === expectUrl() && Date.now() - d.at < EXPECT_TTL ? d : null;
+    } catch (_) { return null; }
+  }
+  function saveExpect(d) { try { if (d) sessionStorage.setItem(EXPECT_KEY, JSON.stringify(d)); else sessionStorage.removeItem(EXPECT_KEY); } catch (_) { /* storage blocked */ } }
+
+  // Called as a batch is sent. A later batch for the same element supersedes the earlier expectation.
+  function remember(recs) {
+    const prev = state.expect || loadExpect();
+    const items = recs.map(expectation);
+    const paths = new Set(items.map((i) => i.path));
+    const kept = prev ? prev.items.filter((i) => !paths.has(i.path)) : [];
+    state.expect = { url: expectUrl(), at: Date.now(), width: innerWidth, items: [...kept, ...items] };
+    state.verdict = null;
+    saveExpect(state.expect);
+  }
+
+  function sameValue(k, have, want) {
+    const a = parseFloat(have), b = parseFloat(want);
+    if (/px$/.test(want) && !Number.isNaN(a) && !Number.isNaN(b)) return Math.abs(a - b) <= 0.6;
+    return have === want;
+  }
+  function checkItem(it) {
+    let el = null;
+    try { el = document.querySelector(it.path); } catch (_) { el = null; }
+    const found = el && descriptor(el) === it.desc;
+    const c = it.checks;
+    if (c.removed) return { name: it.name, ok: !found, why: 'still in the page' };
+    if (!found) return { name: it.name, ok: false, why: 'element not found; the page structure changed' };
+    const b = el.getBoundingClientRect(), s = cs(el);
+    const near = (x, y) => Math.abs(x - y) <= 1.5;
+    const miss = [];
+    if (c.width != null && !near(b.width, c.width)) miss.push(`width is ${rnd(b.width)}px, wanted ${c.width}px`);
+    if (c.height != null && !near(b.height, c.height)) miss.push(`height is ${rnd(b.height)}px, wanted ${c.height}px`);
+    if (c.left != null && !near(b.left + scrollX, c.left)) miss.push(`left edge is at ${rnd(b.left + scrollX)}px, wanted ${c.left}px`);
+    if (c.top != null && !near(b.top + scrollY, c.top)) miss.push(`top edge is at ${rnd(b.top + scrollY)}px, wanted ${c.top}px`);
+    if (c.text != null && collapse(el.innerText) !== c.text) miss.push(`text is still "${trunc(collapse(el.innerText))}"`);
+    VERIFY_KEYS.forEach((k) => { if (c[k] != null && !sameValue(k, s[k], c[k])) miss.push(`${k.replace(/[A-Z]/g, (m) => ' ' + m.toLowerCase())} is ${s[k]}, wanted ${c[k]}`); });
+    return { name: it.name, ok: !miss.length, why: miss.join('; ') };
+  }
+
+  // Measures the page against the last sent batch. Returns null when there is nothing to check.
+  function verify(when = 'now') {
+    const data = state.expect || loadExpect();
+    if (!data || !data.items.length) return null;
+    const items = data.items.map(checkItem);
+    const applied = items.filter((x) => x.ok).length;
+    const lead = when === 'reload' ? 'After the reload' : when === 'clear' ? 'Preview cleared' : 'Checked';
+    const width = data.width !== innerWidth ? ` (measured at ${innerWidth}px wide; the batch was at ${data.width}px)` : '';
+    const lines = [`${lead}: ${applied} of ${items.length} applied${width}.`];
+    items.filter((x) => !x.ok).forEach((x) => lines.push(`not applied: ${x.name}: ${x.why}`));
+    state.verdict = lines.join('\n');
+    if (applied === items.length) { state.expect = null; saveExpect(null); }   // the job is done; a later reload has nothing to re-check
+    else state.expect = data;
+    render();
+    return { applied, total: items.length, text: state.verdict, items };
+  }
+
+  // After a full reload nudge starts afresh; if a batch was sent from this URL, check it once the page has
+  // settled. The bookmarklet is re-run by hand after a reload, so the same path serves both modes.
+  function verifyAfterLoad() {
+    if (!loadExpect()) return;
+    const go = () => setTimeout(() => { if (window.__nudge) verify('reload'); }, 250);
+    if (document.readyState === 'complete') go(); else window.addEventListener('load', go, { once: true });
+  }
+
   /* ────────────────────────── overlay ────────────────────────── */
 
   const overlay = document.createElement('div');
@@ -626,6 +847,23 @@
   const guideH   = mk('position:fixed;display:none;left:0;right:0;height:1px;background:#e0447a;');
   const guideV   = mk('position:fixed;display:none;top:0;bottom:0;width:1px;background:#e0447a;');
   const matchBox = mk('position:fixed;display:none;outline:1px dashed #e0447a;outline-offset:2px;');
+  const bpLayer  = mk('position:fixed;inset:0;display:none;');
+
+  // One dashed line per breakpoint within the viewport, labelled at the top, so a layout can be read against
+  // the widths at which its rules change.
+  function drawBreakpoints() {
+    bpLayer.textContent = '';
+    const { points } = breakpoints();
+    const show = state.bpLines && state.awake && points.length;
+    bpLayer.style.display = show ? 'block' : 'none';
+    if (!show) return;
+    points.filter((p) => p <= innerWidth).forEach((p) => {
+      const line = node('div', `position:absolute;top:0;bottom:0;left:${p - 1}px;width:0;border-left:1px dashed #a07cf0;`);
+      line.dataset.breakpoint = String(p);
+      const tag = node('div', 'position:absolute;top:6px;left:3px;background:#a07cf0;color:#fff;border-radius:3px;padding:0 4px;font:600 10px/16px ui-monospace,Menlo,monospace;white-space:nowrap;', `${p}`);
+      line.appendChild(tag); bpLayer.appendChild(line);
+    });
+  }
 
   const handles = {};
   const CURSOR = { n: 'ns', s: 'ns', e: 'ew', w: 'ew', nw: 'nwse', se: 'nwse', ne: 'nesw', sw: 'nesw' };
@@ -674,9 +912,11 @@
       <strong style="font-size:13px;letter-spacing:.01em">nudge</strong>
       <span data-nudge id="nudge-count" style="display:none;background:#2f6fed;color:#fff;border-radius:9px;padding:0 6px;font:600 11px/17px system-ui;flex-shrink:0"></span>
       <span data-nudge id="nudge-status" style="color:#9c958b;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Click an element to start.</span>
+      <button data-nudge id="nudge-vp" type="button" style="background:none;border:1px solid #3a3733;color:#9c958b;border-radius:4px;padding:0 5px;font:11px/17px ui-monospace,Menlo,monospace;cursor:pointer;flex-shrink:0;white-space:nowrap"></button>
       <button data-nudge id="nudge-close" title="Close (discards uncommitted changes)" style="background:none;border:0;color:#9c958b;font-size:16px;cursor:pointer;line-height:1">×</button>
     </div>
     <div data-nudge id="nudge-reload" style="display:none;padding:8px 14px;background:#3a2f12;color:#f2c86b;border-bottom:1px solid #2c2a27;">The page reloaded. Clear the preview to see the real result.</div>
+    <div data-nudge id="nudge-verdict" style="display:none;padding:8px 14px;background:#1f2e22;color:#9fd3a8;border-bottom:1px solid #2c2a27;white-space:pre-wrap;"></div>
     <div data-nudge id="nudge-list" style="flex:1;overflow:auto;padding:6px 0;"></div>
     <div data-nudge id="nudge-size" style="display:none;padding:8px 14px;border-top:1px solid #2c2a27;">
       <div data-nudge style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
@@ -743,7 +983,23 @@
     render(); renderProps();
   }
 
+  // The badge reads "1280 · 1200+" : the viewport width, then the range it falls in. It is a button: click
+  // draws the breakpoint lines.
+  function renderViewport() {
+    const b = $('nudge-vp');
+    const { points, unreadable } = breakpoints();
+    const r = rangeOf(innerWidth);
+    const range = !points.length ? '' : r.hi === Infinity ? `${r.lo}+` : r.lo ? `${r.lo}–${r.hi - 1}` : `<${r.hi}`;
+    b.textContent = range ? `${innerWidth} · ${range}` : `${innerWidth}`;
+    b.title = points.length ? `${innerWidth}px wide, in the ${r.text} range. Breakpoints at ${points.join(', ')}px. Click to ${state.bpLines ? 'hide' : 'show'} the lines.`
+      : unreadable ? `${innerWidth}px wide. ${unreadable} stylesheet${unreadable > 1 ? 's' : ''} could not be read, so breakpoints are unknown.` : `${innerWidth}px wide. The page has no width breakpoints.`;
+    b.style.color = state.bpLines ? '#c9b6f7' : '#9c958b';
+    b.style.borderColor = state.bpLines ? '#7a5fd0' : '#3a3733';
+    drawBreakpoints();
+  }
+
   function render() {
+    renderViewport();
     const sent = sentRecs(), unsent = unsentRecs();
     $('nudge-list').style.display = state.collapsed ? 'none' : '';
     $('nudge-hint').style.display = state.collapsed ? 'none' : '';
@@ -753,6 +1009,11 @@
     $('nudge-copy').textContent = state.copyLock ? 'Copied' : (sent.length && !unsent.length ? 'Clear preview' : 'Copy for Claude Code');
     $('nudge-recopy').style.display = sent.length ? '' : 'none';
     $('nudge-reload').style.display = sent.some((r) => r.sentSeq < state.reloadSeq) ? 'block' : 'none';
+    const v = $('nudge-verdict');
+    v.style.display = state.verdict && !state.collapsed ? 'block' : 'none';
+    v.textContent = state.verdict || '';
+    v.style.background = state.verdict && /not applied/.test(state.verdict) ? '#3a2f12' : '#1f2e22';
+    v.style.color = state.verdict && /not applied/.test(state.verdict) ? '#f2c86b' : '#9fd3a8';
 
     const list = $('nudge-list');
     list.textContent = '';
@@ -787,7 +1048,9 @@
   function report(recs = allRecs()) {
     const lines = [];
     lines.push(`nudge batch · ${location.href} · viewport ${innerWidth}×${innerHeight} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`);
+    lines.push(viewportLine());
     lines.push('');
+    let responsive = false;
     recs.forEach((r, i) => {
       lines.push(`${i + 1}. ${label(r.el)}`);
       if (r.removed) lines.push('   remove this element from the markup');
@@ -812,6 +1075,7 @@
         lines.push(`   moved ${mv.join(', ')}`);
       }
       r.snaps.forEach((s) => lines.push(`   ${s}`));
+      if (!r.removed) { const rn = responsiveNote(r.el); if (rn) { lines.push(`   ${rn}`); responsive = true; } }
       lines.push('');
     });
     // Only the guidance this batch needs.
@@ -824,6 +1088,7 @@
     if (recs.some((r) => !r.removed && Object.keys(r.colour).length)) lines.push(FOOTER.colour);
     if (recs.some((r) => !r.removed && r.text != null)) lines.push(FOOTER.text);
     if (recs.some((r) => r.removed)) lines.push(FOOTER.removals);
+    if (responsive) lines.push(FOOTER.responsive);
     return lines.join('\n');
   }
 
@@ -845,6 +1110,7 @@
     const recs = unsentRecs();
     if (!recs.length) { setStatus('Nothing to copy yet.'); return; }
     if (!(await writeClipboard(report(recs)))) { setStatus('Copy failed. Nothing was marked as sent.'); return; }
+    remember(recs);
     state.batch++;
     recs.forEach((r) => { r.sent = true; r.sentBatch = state.batch; r.sentSeq = state.reloadSeq; });
     state.notice = null;
@@ -860,6 +1126,7 @@
     const recs = unsentRecs();
     if (!recs.length) return null;
     const text = report(recs);
+    remember(recs);
     state.batch++;
     recs.forEach((r) => { r.sent = true; r.sentBatch = state.batch; r.sentSeq = state.reloadSeq; });
     state.notice = null;
@@ -880,6 +1147,7 @@
     state.notice = null;
     render(); updateBoxes();
     setStatus('Preview cleared. This is the live page.');
+    verify('clear');
   }
 
   function primary() {
@@ -1319,6 +1587,7 @@
   const headObserver = new MutationObserver((muts) => {
     if (!stylesheetsReloaded(muts)) return;
     state.reloadSeq++;
+    state.bp = null;
     render(); updateBoxes();
   });
 
@@ -1346,8 +1615,9 @@
     [document, 'mousemove', onMove], [document, 'mousedown', onDown], [document, 'mouseup', onUp],
     [document, 'click', onClick], [document, 'keydown', onKey], [document, 'contextmenu', onContext],
     [document, 'dblclick', onDblClick], [document, 'beforeinput', onBeforeInput], [document, 'paste', onPaste],
-    [document, 'drop', onDrop], [window, 'scroll', onScroll], [window, 'resize', onScroll],
+    [document, 'drop', onDrop], [window, 'scroll', onScroll], [window, 'resize', onResize],
   ];
+  function onResize() { onScroll(); renderViewport(); }
 
   let headTarget = null;
   function observeHead() {
@@ -1363,6 +1633,7 @@
     observeHead();
     overlay.style.display = ''; panel.style.display = 'flex';
     dot.hidden = true;
+    state.bp = null;
     render(); updateBoxes(); renderProps();
   }
 
@@ -1373,7 +1644,7 @@
     pageListeners.forEach(([t, ev, fn]) => t.removeEventListener(ev, fn, true));
     headObserver.disconnect(); headTarget = null;
     state.awake = false;
-    hoverBox.style.display = 'none'; showGuides(null);
+    hoverBox.style.display = 'none'; showGuides(null); bpLayer.style.display = 'none';
     overlay.style.display = 'none'; panel.style.display = 'none';
     dot.hidden = state.dotHidden;
   }
@@ -1421,11 +1692,13 @@
     $('nudge-reset').addEventListener('click', resetAll);
     $('nudge-close').addEventListener('click', (e) => { e.stopPropagation(); close(); });
     $('nudge-head').addEventListener('click', () => setCollapsed(!state.collapsed));
+    $('nudge-vp').addEventListener('click', (e) => { e.stopPropagation(); state.bpLines = !state.bpLines; renderViewport(); });
     FIELDS.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });
     rootObserver.observe(root, { childList: true });
     hookHistory();
     overlay.style.display = 'none'; panel.style.display = 'none';
     if (DORMANT) render(); else wake();
+    verifyAfterLoad();
   }
 
   function destroy() {
@@ -1440,7 +1713,8 @@
   if (document.body) mount(); else document.addEventListener('DOMContentLoaded', mount, { once: true });
 
   window.__nudge = {
-    destroy, wake, sleep, toggle, close, report, take,
+    destroy, wake, sleep, toggle, close, report, take, verify,
+    breakpoints: () => ({ points: breakpoints().points.slice(), unreadable: breakpoints().unreadable, range: rangeOf(innerWidth).text }),
     // Test hook. Read-only view of internal state; no behavioural effect.
     _state: {
       get selected() { return state.selected; },
@@ -1453,7 +1727,9 @@
       get awake() { return state.awake; },
       get mode() { return DORMANT ? 'dormant' : 'bookmarklet'; },
       get collapsed() { return state.collapsed; },
-      els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot },
+      get bpLines() { return state.bpLines; },
+      get verdict() { return state.verdict; },
+      els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot, bpLayer },
     },
   };
 })();
