@@ -108,6 +108,10 @@ All pass/fail. No subjective checks.
 | 83 | Guardrails | Text colour set to `--surface` on `.ink-text` puts `contrast 1.0:1 after this change, below the 4.5:1 AA minimum for this text size` in the status and the batch; font size 11 on `.type-target` gives `font size 11px is below 12px, small for body text` |
 | 84 | History and re-copy | `history()` is empty, holds the first batch's text after Copy, and two entries after a second; the second Re-copy press says `Copied again (2×)` and how to paste |
 | 85 | Gap drag | With card-a selected, an Option-drag of card-b down 16px sets `row-gap: 40px` inline on `#cards`, records no move, shows the `40` ruler during the drag, and the batch reads `gap to … card-a … 24px → 40px (set by row-gap 24px on section#cards)` with the gap footer; undo clears the inline gap. With stack-a selected, an Option-drag of stack-b down 10px sets `margin-top: 30px` inline on stack-b and the batch reads `… 20px → 30px (set by margin-top 20px on this element)`; after `take()` and a reload with the margin applied in CSS, verify reports `1 of 1 applied` |
+| 86 | Action row | Hidden with nothing selected; card-b selected shows `Pin`, `Measure`, `Remove`; Pin → `Unpin`; selecting card-a shows `Pin`, `Match`, `Measure`, `Remove` and the crumbs end `· pin: div.card.card-b ×`; Match sets width 520; the pin's name in the crumbs selects it; its × removes the pin and the Match button; Remove records a removal and hides the row; collapsed hides the row |
+| 87 | Siblings button | item-1 at width 300 shows `Siblings`; clicking applies to item-2 and item-3 and the button reads `Release siblings`; clicking again releases |
+| 88 | Measure mode | Measure on card-a: hovering card-b without Option draws the `24` ruler; a plain drag of card-b down 16px sets the gap to 40; a plain click on stack-a selects it with measuring still on; Escape stops measuring and keeps the selection; Escape again deselects; the button reads `Stop measuring` while on |
+| 89 | X-ray button | The header's x-ray button turns x-ray on and lights up; the x key turns it off and the button dims; the button does not collapse the panel |
 
 ## Test Plan
 

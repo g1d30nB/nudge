@@ -1860,3 +1860,85 @@ test('85b a gap change is verified after a reload', async ({ page }) => {
   await page.reload();
   expect((await page.evaluate(() => window.__nudge.verify('reload'))).text).toBe('After the reload: 1 of 1 applied.');
 });
+
+/* ───────────── action row, measure mode, x-ray button (checks 86–89) ───────────── */
+
+const actions = (page) => page.evaluate(() => { const row = document.querySelector('#nudge-actions'); return getComputedStyle(row).display === 'none' ? null : [...row.querySelectorAll('button')].map((b) => b.textContent); });
+const actionBtn = (page, name) => page.locator('#nudge-actions button', { hasText: name });
+
+test('86 the action row shows the selection\'s verbs, only the ones that apply', async ({ page }) => {
+  await inject(page);
+  expect(await actions(page)).toBeNull();
+  await select(page, '[data-test=card-b]');
+  expect(await actions(page)).toEqual(['Pin', 'Measure', 'Remove']);
+  await actionBtn(page, 'Pin').click();
+  expect(await actions(page)).toEqual(['Unpin', 'Measure', 'Remove']);
+  expect(await pinOver(page, '[data-test=card-b]')).toBe(true);
+  await select(page, '[data-test=card-a]');
+  expect(await actions(page)).toEqual(['Pin', 'Match', 'Measure', 'Remove']);
+  await expect(status(page)).toHaveText('section#cards > div.card.card-a · pin: div.card.card-b ×');
+  await actionBtn(page, 'Match').click();
+  expect((await changes(page))[0].w).toBe(520);
+  await select(page, '[data-test=card-a]');            // the match message replaced the crumbs; reselecting brings them back
+  await page.locator('#nudge-status [data-pinned]').click();
+  expect(await selectedIs(page, '[data-test=card-b]')).toBe(true);
+  await select(page, '[data-test=card-a]');
+  await page.locator('#nudge-status [data-unpin]').click();
+  expect(await page.evaluate(() => window.__nudge._state.pin)).toBeNull();
+  expect(await actions(page)).toEqual(['Pin', 'Measure', 'Remove']);
+  await expect(status(page)).toHaveText('section#cards > div.card.card-a');
+  await actionBtn(page, 'Remove').click();
+  expect((await changes(page))[0].removed).toBe(true);
+  expect(await actions(page)).toBeNull();
+  await select(page, '[data-test=card-b]');
+  await page.locator('#nudge-head strong').click();     // the header's centre is a crumb now, which selects rather than collapses
+  expect(await collapsed(page)).toBe(true);
+  expect(await actions(page)).toBeNull();
+});
+
+test('87 the Siblings button applies a change to matching siblings and releases them', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=item-1]');
+  expect(await actions(page)).toEqual(['Pin', 'Measure', 'Remove']);
+  await typeInto(page, sizeField(page, 'w'), '300');
+  expect(await actions(page)).toEqual(['Pin', 'Siblings', 'Measure', 'Remove']);
+  await actionBtn(page, 'Siblings').click();
+  expect(await page.evaluate(() => document.querySelector('[data-test=item-3]').style.width)).toBe('300px');
+  expect(await actions(page)).toEqual(['Pin', 'Release siblings', 'Measure', 'Remove']);
+  await actionBtn(page, 'Release siblings').click();
+  expect(await page.evaluate(() => document.querySelector('[data-test=item-3]').style.width)).toBe('');
+});
+
+test('88 Measure mode gives the rulers and the gap drag without Option', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=card-a]');
+  await actionBtn(page, 'Measure').click();
+  expect(await page.evaluate(() => window.__nudge._state.measure)).toBe(true);
+  expect(await actions(page)).toContain('Stop measuring');
+  const b = await rect(page, '[data-test=card-b]');
+  await page.mouse.move(b.cx, b.cy);
+  expect(await rulers(page)).toEqual(['24']);
+  await drag(page, [b.cx, b.cy], [b.cx, b.cy + 16], { steps: 8 });
+  expect(await page.evaluate(() => window.__nudge._state.changes[0].gap.to)).toBe(40);
+  expect(await page.evaluate(() => document.querySelector('#cards').style.rowGap)).toBe('40px');
+  await select(page, '[data-test=stack-a]');
+  expect(await selectedIs(page, '[data-test=stack-a]')).toBe(true);
+  expect(await page.evaluate(() => window.__nudge._state.measure)).toBe(true);
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => window.__nudge._state.measure)).toBe(false);
+  expect(await selectedIs(page, '[data-test=stack-a]')).toBe(true);
+  await page.keyboard.press('Escape');
+  expect(await selectedIs(page, null)).toBe(true);
+});
+
+test('89 the header x-ray button toggles x-ray without collapsing the panel', async ({ page }) => {
+  await inject(page);
+  const lit = () => page.evaluate(() => document.querySelector('#nudge-xray').style.borderColor);
+  await page.locator('#nudge-xray').click();
+  expect(await page.evaluate(() => window.__nudge._state.xray)).toBe(true);
+  expect(await collapsed(page)).toBe(false);
+  expect(await lit()).toBe('rgb(47, 111, 237)');
+  await page.keyboard.press('x');
+  expect(await page.evaluate(() => window.__nudge._state.xray)).toBe(false);
+  expect(await lit()).toBe('rgb(58, 55, 51)');
+});
