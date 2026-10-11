@@ -1627,3 +1627,86 @@ test('75 Clear preview measures the live page against the sent batch without a r
   await expect(verdict(page)).toHaveText('Preview cleared: 0 of 1 applied.\nnot applied: section#cards > div.card.card-b "The wider card. Its width …ap targets for resize.": width is 520px, wanted 550px');
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('nudge:expect')).items.length)).toBe(1);
 });
+
+/* ───────────── reach: crumbs, hover tag, x-ray, component names, rulers (checks 76–80) ───────────── */
+
+const crumbs = (page) => page.locator('#nudge-status [data-crumb]');
+const rulers = (page) => page.evaluate(() => [...window.__nudge._state.els.rulerLayer.querySelectorAll('[data-ruler]')].map((r) => r.dataset.ruler));
+
+test('76 the status shows the selection as crumbs; a crumb click selects that ancestor', async ({ page }) => {
+  await inject(page);
+  await select(page, `${FIG} img`);
+  await expect(status(page)).toHaveText('div.case-media > figure > img');
+  await expect(crumbs(page)).toHaveText(['div.case-media', 'figure', 'img']);
+  await crumbs(page).nth(1).click();
+  expect(await selectedIs(page, FIG)).toBe(true);
+  expect(await collapsed(page)).toBe(false);
+  await expect(crumbs(page)).toHaveText(['section#work', 'div.case-media', 'figure']);
+  await page.keyboard.press('ArrowRight');
+  await expect(status(page)).toHaveText('moved right 1px');
+  expect(await crumbs(page).count()).toBe(0);
+});
+
+test('77 the hover box carries a tag naming the element and its size', async ({ page }) => {
+  await inject(page);
+  await into(page, '[data-test=card-a]');
+  const b = await rect(page, '[data-test=card-a]');
+  await page.mouse.move(b.cx, b.cy);
+  const tag = () => page.evaluate(() => { const t = window.__nudge._state.els.hoverTag; return { text: t.textContent, top: t.style.top, shown: getComputedStyle(t.parentNode).display !== 'none' }; });
+  expect(await tag()).toEqual({ text: `div.card.card-a · 360×${Math.round(b.height)}`, top: '-19px', shown: true });
+  await page.evaluate(() => document.querySelector('[data-test=card-a]').scrollIntoView({ block: 'start' }));
+  const b2 = await rect(page, '[data-test=card-a]');
+  await page.mouse.move(b2.cx, b2.cy);
+  await expect.poll(async () => (await tag()).top).toBe('2px');
+});
+
+test('78 x toggles an outline on every container in view', async ({ page }) => {
+  await inject(page);
+  const boxes = () => page.evaluate(() => window.__nudge._state.els.xrayLayer.querySelectorAll('[data-xray]').length);
+  expect(await boxes()).toBe(0);
+  await page.keyboard.press('x');
+  expect(await page.evaluate(() => window.__nudge._state.xray)).toBe(true);
+  expect(await boxes()).toBeGreaterThanOrEqual(3);
+  await expect(status(page)).toContainText('X-ray on');
+  const outlined = await page.evaluate(() => {
+    const at = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [...window.__nudge._state.els.xrayLayer.querySelectorAll('[data-xray]')].some((x) => x.style.left === b.left + 'px' && x.style.width === b.width + 'px' && x.style.top === b.top + 'px'); };
+    return { hero: at('#hero'), text: at('.hero-text') };
+  });
+  expect(outlined).toEqual({ hero: true, text: true });
+  await page.keyboard.press('x');
+  expect(await boxes()).toBe(0);
+  await expect(page.locator('#nudge-hint')).toContainText('x x-ray');
+});
+
+test('79 the batch names the component that rendered the element, from React or Vue dev internals', async ({ page }) => {
+  await inject(page);
+  await page.evaluate(() => {
+    function Hero() {}
+    const App = { displayName: 'App' };
+    const el = document.querySelector('[data-test=tagline]');
+    el['__reactFiber$test'] = { type: 'p', return: { type: Symbol('Fragment'), return: { type: { $$typeof: Symbol('memo'), type: Hero }, return: { type: App, return: null } } } };
+    document.querySelector('[data-test=card-a]').__vueParentComponent = { type: { __name: 'PricingCard' }, parent: { type: { name: 'App' }, parent: null } };
+  });
+  await select(page, TAGLINE); await page.keyboard.press('ArrowRight');
+  await select(page, '[data-test=card-a]'); await page.keyboard.press('ArrowRight');
+  await select(page, '[data-test=card-b]'); await page.keyboard.press('ArrowRight');
+  const lines = await reportLines(page);
+  expect(lines.find((l) => l.startsWith('1. '))).toMatch(/p\.tagline in <Hero> \(src/);
+  expect(lines.find((l) => l.startsWith('2. '))).toContain('div.card.card-a in <PricingCard> "');
+  expect(lines.find((l) => l.startsWith('3. '))).not.toContain(' in <');
+});
+
+test('80 Option-hover measures the gap to another element, or the insets inside a parent', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=card-a]');
+  const b = await rect(page, '[data-test=card-b]');
+  await page.keyboard.down('Alt');
+  await page.mouse.move(b.cx, b.cy);
+  expect(await rulers(page)).toEqual(['24']);
+  const sec = await rect(page, '#cards');
+  await page.mouse.move(sec.right - 10, sec.cy);          // inside the section, beside the cards
+  expect(await rulers(page)).toEqual(['40', '880', '40', '144']);   // left, right, top, bottom insets at 1280 wide
+  await page.keyboard.up('Alt');
+  await page.mouse.move(sec.right - 12, sec.cy);
+  expect(await rulers(page)).toEqual([]);
+});
