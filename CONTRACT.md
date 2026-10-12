@@ -115,6 +115,7 @@ All pass/fail. No subjective checks.
 | 90 | Movable panel | Dragging the header 120px left and 60px up moves the panel by that and nothing collapses; a 2px drag collapses as a click; a drag that starts on a crumb moves the panel and selects nothing; the position survives sleep and wake; shrinking the window keeps the panel inside it |
 | 91 | Undo and redo | After a resize, Command-Z removes the record and the inline width; Shift-Command-Z brings both back; two changes then two Command-Zs walk back both; Control-Z and Control-Y do the same; a third Command-Z with nothing left says so |
 | 92 | Undo across kinds | One Command-Z each reverts a text edit (the DOM text returns), a colour choice, a removal, a whole match (width and type together), a siblings apply (the siblings' inline widths clear) and a gap drag (the parent's inline row-gap clears); Reset is undone in one step; after Copy there is nothing to undo and the status says sent changes are not undone |
+| 93 | Resize anchor against the layout | A 200×120 box aligned to the end of its grid cell: dragging the south handle down 40px leaves the top edge where it was and moves the bottom 40px (the layout would have held the bottom and lifted the top); the record has height +40 and dy 40. An Option-locked drag of the south-west corner (−60, 0) leaves the top and right edges in place: width 260, height 156, dy 36 and dx 0, because the layout already holds the right edge |
 
 ## Test Plan
 

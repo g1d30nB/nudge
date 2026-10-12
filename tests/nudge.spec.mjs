@@ -2084,3 +2084,32 @@ test('92 undo covers every kind of change in one step each, and stops at a sent 
   await expect(status(page)).toHaveText('Nothing to undo. Sent changes are not undone; clear the preview instead.');
   expect(await changes(page)).toHaveLength(2);
 });
+
+/* ───────────── resize anchor against the layout (check 93) ───────────── */
+
+test('93 a resize keeps the handle\'s opposite edge fixed even when the layout anchors the other one', async ({ page }) => {
+  await inject(page);
+  const A = '[data-test=anchored]';
+  await select(page, A);
+  const b0 = await rect(page, A);
+  const sh = await page.evaluate(() => { const h = window.__nudge._state.els.handles.s.getBoundingClientRect(); return [h.left + 5, h.top + 5]; });
+  await drag(page, sh, [sh[0], sh[1] + 40], { shift: true });   // Shift: no snapping, so the numbers are exact
+  let b1 = await rect(page, A);
+  expect(Math.round(b1.top)).toBe(Math.round(b0.top));
+  expect(Math.round(b1.bottom)).toBe(Math.round(b0.bottom) + 40);
+  let r = (await changes(page))[0];
+  expect(r.h).toBe(160); expect(r.dy).toBe(40); expect(r.dx).toBe(0);
+  await page.locator('#nudge-reset').click();
+  await select(page, A);
+  const sw = await page.evaluate(() => { const h = window.__nudge._state.els.handles.sw.getBoundingClientRect(); return [h.left + 5, h.top + 5]; });
+  await page.keyboard.down('Alt');
+  await page.mouse.move(sw[0], sw[1]); await page.mouse.down();
+  await page.mouse.move(sw[0] - 60, sw[1], { steps: 10 });
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  b1 = await rect(page, A);
+  expect(Math.round(b1.top)).toBe(Math.round(b0.top));
+  expect(Math.round(b1.right)).toBe(Math.round(b0.right));
+  r = (await changes(page))[0];
+  expect(r.w).toBe(260); expect(r.h).toBe(156); expect(r.dx).toBe(0); expect(r.dy).toBe(36);   // the layout already holds the right edge, so no x move is needed
+});

@@ -2009,7 +2009,20 @@
       const gw = (setW ? r.w : d.w0) - d.w0, gh = (setH ? r.h : d.h0) - d.h0;
       r.dx = rnd(centre ? d.dx0 - gw / 2 : hasW ? d.dx0 - gw : d.dx0);
       r.dy = rnd(centre ? d.dy0 - gh / 2 : hasN ? d.dy0 - gh : d.dy0);
-      apply(r); showGuides(s); updateBoxes();
+      apply(r);
+      // The layout may move the box when its size changes (an element aligned to the end of a grid cell or
+      // a flex container grows upward or leftward). The handle promised the opposite edge stays, so measure
+      // and correct the move until it does. The batch then carries the move the layout would otherwise hide.
+      const now = r.el.getBoundingClientRect();
+      const wantX = centre ? (d.left + d.right) / 2 : hasW ? d.right : d.left;
+      const haveX = centre ? (now.left + now.right) / 2 : hasW ? now.right : now.left;
+      const wantY = centre ? (d.top + d.bottom) / 2 : hasN ? d.bottom : d.top;
+      const haveY = centre ? (now.top + now.bottom) / 2 : hasN ? now.bottom : now.top;
+      if (Math.abs(haveX - wantX) >= 0.5 || Math.abs(haveY - wantY) >= 0.5) {
+        r.dx = rnd(r.dx + (wantX - haveX)); r.dy = rnd(r.dy + (wantY - haveY));
+        apply(r);
+      }
+      showGuides(s); updateBoxes();
       setStatus(withNotice(summary(r)));
     }
   }

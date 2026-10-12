@@ -8,6 +8,10 @@ Installed bookmarks are pinned to a release. To get a new release, reinstall the
 
 - **Undo and redo.** Command-Z (Control-Z on Windows and Linux) undoes the last change of any kind, Shift-Command-Z, Control-Y or Control-Shift-Z redoes it. A match, a siblings apply and a Reset each undo in one step. Copying a batch is the commit point: sent changes are never undone back into the next batch.
 
+### Fixed
+
+- **Resizing keeps the opposite edge fixed** whatever the layout does. An element aligned to the end of its grid cell or flex container used to grow upward or leftward when its bottom or left handle was dragged, so a locked drag from the bottom-left corner seemed to grow into the bottom-right. nudge now measures after each step and moves the box so the handle's opposite corner stays, and the batch carries that move.
+
 ## v1.3.1, 12 October 2026
 
 ### Added
