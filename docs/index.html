@@ -38,7 +38,7 @@
   <p class="lede">Drag on the running page, then paste the measurements into your coding agent.</p>
 
   <div class="install">
-    <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
+    <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
     <p>Drag this button to your bookmarks bar. That is the whole install.</p>
   </div>
 
@@ -52,6 +52,14 @@
     <li>When your agent has applied it, press <strong>Clear preview</strong> to see the page as your code now renders it.</li>
     <li>Click the bookmark again to close the panel.</li>
   </ol>
+
+  <h2>New in v1.3.1, 12 October 2026</h2>
+  <ul>
+    <li><strong>Action row.</strong> Under the panel header, the selection's own buttons, only the ones that apply: Pin or Unpin, Match when something is pinned, Siblings when the change has siblings to go to, Measure, Remove. The keys still work.</li>
+    <li><strong>Measure button.</strong> Rulers and the gap drag without holding Option. Escape stops.</li>
+    <li><strong>x-ray button</strong> in the header, and the pinned element named in the crumbs with a × to remove it.</li>
+    <li><strong>Movable panel.</strong> Drag the header to put the panel anywhere in the window. A click still collapses it.</li>
+  </ul>
 
   <h2>New in v1.3.0, 11 October 2026</h2>
   <p>The biggest release since launch. Reinstall the bookmark above to get it; installed bookmarks are pinned to the release they came from.</p>
@@ -85,13 +93,14 @@
     <tr><td>x</td><td>Outline every container. Also the x-ray button in the header.</td></tr>
     <tr><td>Header badge</td><td>Draw the breakpoint lines.</td></tr>
     <tr><td>Header crumbs</td><td>Select an ancestor.</td></tr>
+    <tr><td>Header, dragged</td><td>Move the panel.</td></tr>
     <tr><td>Escape</td><td>Deselect.</td></tr>
   </table>
   <p>The full list, with the buttons and the page API, is in the <a href="https://github.com/g1d30nB/nudge#keys-and-commands">README</a>.</p>
 
   <h2>If you cannot drag the button</h2>
   <p>Create a new bookmark by hand and paste this line as its URL.</p>
-  <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
+  <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
 
   <h2>In your project, for Claude Code's browser</h2>
   <p>Claude Code's built-in browser has no bookmarks bar. Put nudge in the project instead and it loads as a small blue dot in the bottom left corner while you develop. Click the dot to open it. It is the same file, and it cannot reach your live site: the tag only exists in development, and nudge refuses to run anywhere but a local address.</p>
@@ -100,12 +109,12 @@
 
 nudge is a design-correction tool: https://github.com/g1d30nB/nudge. It is one script file. Add this tag to the layout or entry point that every page shares, so it is present when I run the dev server and absent from any production build:
 
-&lt;script src=&quot;https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.0/nudge.js&quot; data-nudge-dormant&gt;&lt;/script&gt;
+&lt;script src=&quot;https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js&quot; data-nudge-dormant&gt;&lt;/script&gt;
 
 Rules:
 - Keep the data-nudge-dormant attribute exactly as written. Without it nudge opens a panel on every page load.
 - Guard the tag with this framework&#x27;s own development flag (for example import.meta.env.DEV, process.env.NODE_ENV === &#x27;development&#x27;, or import.meta.dev), so it cannot reach a production build. Do not rely on a runtime check instead.
-- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.3.0 into the public folder and point the tag at /nudge.js instead.
+- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.3.1 into the public folder and point the tag at /nudge.js instead.
 - Change nothing else.
 - When you are done, start the dev server, tell me which file you changed, and remind me that the small blue dot in the bottom left corner of the page opens nudge.</pre>
   <p>To take it out again: <em>Remove nudge from this project: delete the script tag and any code you added to load it.</em> Details and snippets for each framework are in the <a href="https://github.com/g1d30nB/nudge#putting-nudge-in-your-project">README</a>.</p>
