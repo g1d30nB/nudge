@@ -10,6 +10,7 @@ Installed bookmarks are pinned to a release. To get a new release, reinstall the
 - **Measure button.** Rulers and the gap drag without holding Option. Escape stops.
 - **x-ray button** in the header, beside the key.
 - The header crumbs name the pinned element, with a × to remove the pin.
+- **Movable panel.** Drag the header to put the panel anywhere in the window. A click still collapses it. It stays inside the window when the window shrinks or the panel grows, and keeps its place until the page reloads.
 
 ## v1.3.0, 11 October 2026
 
