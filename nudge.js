@@ -62,6 +62,7 @@
     xray: false,            // outlines on every container, to find wrappers that have no surface of their own
     pin: null,              // the element "m" matches the selection to
     measure: false,         // rulers and gap drags without holding Option, from the Measure button
+    panelMoved: false,      // set when a header drag has just moved the panel, so the release is not a click
     matching: false,        // true while matchPin drives the setters, so they keep the match note
     history: [],            // every batch sent this page load: { batch, at, text }
     recopies: 0,            // Re-copy presses since the last batch, for the nudge when a paste keeps failing
@@ -1172,7 +1173,7 @@
     background:#1c1b19;color:#ece7df;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);z-index:${Z + 1};
     font:12px/1.45 -apple-system,system-ui,sans-serif;overflow:hidden;`;
   panel.innerHTML = `
-    <div data-nudge id="nudge-head" title="Collapse" style="padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #2c2a27;cursor:pointer;user-select:none;">
+    <div data-nudge id="nudge-head" title="Click to collapse, drag to move" style="padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #2c2a27;cursor:pointer;user-select:none;">
       <span data-nudge id="nudge-chev" style="color:#6f6a62;font-size:10px;width:8px;flex-shrink:0">▾</span>
       <strong style="font-size:13px;letter-spacing:.01em">nudge</strong>
       <span data-nudge id="nudge-count" style="display:none;background:#2f6fed;color:#fff;border-radius:9px;padding:0 6px;font:600 11px/17px system-ui;flex-shrink:0"></span>
@@ -1249,8 +1250,45 @@
   function setCollapsed(v) {
     state.collapsed = !!v;
     $('nudge-chev').textContent = state.collapsed ? '▸' : '▾';
-    $('nudge-head').title = state.collapsed ? 'Expand' : 'Collapse';
+    $('nudge-head').title = state.collapsed ? 'Click to expand, drag to move' : 'Click to collapse, drag to move';
     render(); renderProps();
+  }
+
+  // The panel moves by its header. Under 3px of movement the release is still a click, so collapse and the
+  // crumbs keep working. Once moved it is anchored by its top-left corner and kept inside the window,
+  // including on resize. The position lasts the page load, as the collapsed state does.
+  const PANEL_MARGIN = 8;
+  function placePanel(left, top) {
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    left = Math.min(Math.max(PANEL_MARGIN, left), Math.max(PANEL_MARGIN, innerWidth - w - PANEL_MARGIN));
+    top = Math.min(Math.max(PANEL_MARGIN, top), Math.max(PANEL_MARGIN, innerHeight - h - PANEL_MARGIN));
+    panel.style.left = left + 'px'; panel.style.top = top + 'px';
+    panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    panel.dataset.moved = '';
+  }
+  function keepPanelOnScreen() { if (panel.dataset.moved != null && state.awake) placePanel(parseFloat(panel.style.left), parseFloat(panel.style.top)); }
+  // A moved panel that grows (the type controls appearing) must not grow off the bottom of the window.
+  if (window.ResizeObserver) new ResizeObserver(() => keepPanelOnScreen()).observe(panel);
+  function startPanelDrag(e) {
+    if (e.button !== 0 || e.target.closest('button')) return;   // buttons in the header keep their click
+    const b = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY, left0 = b.left, top0 = b.top;
+    let moving = false;
+    state.panelMoved = false;
+    const move = (ev) => {
+      if (!moving && Math.abs(ev.clientX - sx) < 3 && Math.abs(ev.clientY - sy) < 3) return;
+      if (!moving) { moving = true; state.panelMoved = true; $('nudge-head').style.cursor = 'grabbing'; document.body.style.userSelect = 'none'; }
+      placePanel(left0 + ev.clientX - sx, top0 + ev.clientY - sy);
+      ev.preventDefault();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move, true); window.removeEventListener('mouseup', up, true);
+      $('nudge-head').style.cursor = ''; document.body.style.userSelect = '';
+      // The click event follows this mouseup; clear the flag after it has been judged.
+      setTimeout(() => { state.panelMoved = false; }, 0);
+    };
+    window.addEventListener('mousemove', move, true); window.addEventListener('mouseup', up, true);
+    e.preventDefault();
   }
 
   // The action row: the selection's own verbs, shown only when they apply, so it holds two to five small
@@ -1275,6 +1313,7 @@
       row.appendChild(b);
     });
     row.style.display = 'flex';
+    keepPanelOnScreen();
   }
   function toggleXray() {
     state.xray = !state.xray;
@@ -1317,6 +1356,7 @@
   function render() {
     renderViewport();
     renderActions();
+    keepPanelOnScreen();
     const sent = sentRecs(), unsent = unsentRecs();
     $('nudge-list').style.display = state.collapsed ? 'none' : '';
     $('nudge-hint').style.display = state.collapsed ? 'none' : '';
@@ -1534,6 +1574,7 @@
     $('nudge-colour').style.marginTop = showType && colours.length ? '8px' : '0';
     $('nudge-props').style.display = (showType || colours.length) && !state.collapsed ? '' : 'none';
     renderColour(el, colours);
+    keepPanelOnScreen();
     if (!showType) return;
     const r = state.changes.get(el);
     const live = readType(cs(el));
@@ -1708,6 +1749,7 @@
     renderActions();
     if (el) showCrumbs(el);
     else setStatus(idleStatus());
+    keepPanelOnScreen();
   }
 
   // The selection's ancestry as clickable crumbs in the status line: the same path the descriptor prints,
@@ -1722,7 +1764,7 @@
       const crumb = node('span', `cursor:pointer;${cur === el ? 'color:#ece7df' : ''}`, descriptor(cur).split(' > ').pop());
       crumb.dataset.crumb = '';
       crumb.title = cur === el ? 'selected' : 'select this element';
-      crumb.addEventListener('click', (e) => { e.stopPropagation(); if (document.contains(cur)) select(cur); });
+      crumb.addEventListener('click', (e) => { e.stopPropagation(); if (!state.panelMoved && document.contains(cur)) select(cur); });
       st.appendChild(crumb);
     });
     // The pin, when it is not the selection: its name selects it, the × removes it.
@@ -1731,7 +1773,7 @@
       st.appendChild(node('span', 'color:#6f6a62;white-space:pre', ' · pin: '));
       const name = node('span', 'cursor:pointer;color:#e0a030', descriptor(pin).split(' > ').pop());
       name.dataset.pinned = ''; name.title = 'select the pinned element';
-      name.addEventListener('click', (e) => { e.stopPropagation(); select(pin); });
+      name.addEventListener('click', (e) => { e.stopPropagation(); if (!state.panelMoved) select(pin); });
       const off = node('span', 'cursor:pointer;color:#6f6a62;white-space:pre', ' ×');
       off.dataset.unpin = ''; off.title = 'remove the pin';
       off.addEventListener('click', (e) => { e.stopPropagation(); state.pin = null; updatePin(); renderActions(); showCrumbs(el); });
@@ -1993,7 +2035,7 @@
     [document, 'dblclick', onDblClick], [document, 'beforeinput', onBeforeInput], [document, 'paste', onPaste],
     [document, 'drop', onDrop], [window, 'scroll', onScroll], [window, 'resize', onResize],
   ];
-  function onResize() { onScroll(); renderViewport(); }
+  function onResize() { onScroll(); renderViewport(); keepPanelOnScreen(); }
 
   let headTarget = null;
   function observeHead() {
@@ -2068,7 +2110,8 @@
     $('nudge-recopy').addEventListener('click', recopy);
     $('nudge-reset').addEventListener('click', resetAll);
     $('nudge-close').addEventListener('click', (e) => { e.stopPropagation(); close(); });
-    $('nudge-head').addEventListener('click', () => setCollapsed(!state.collapsed));
+    $('nudge-head').addEventListener('click', () => { if (!state.panelMoved) setCollapsed(!state.collapsed); });
+    $('nudge-head').addEventListener('mousedown', startPanelDrag);
     $('nudge-vp').addEventListener('click', (e) => { e.stopPropagation(); state.bpLines = !state.bpLines; renderViewport(); });
     $('nudge-xray').addEventListener('click', (e) => { e.stopPropagation(); toggleXray(); });
     FIELDS.forEach((d) => { const i = typeInput(d.key); i.addEventListener('keydown', onTypeKey); i.addEventListener('change', onTypeChange); addSteppers(d); });

@@ -112,6 +112,7 @@ All pass/fail. No subjective checks.
 | 87 | Siblings button | item-1 at width 300 shows `Siblings`; clicking applies to item-2 and item-3 and the button reads `Release siblings`; clicking again releases |
 | 88 | Measure mode | Measure on card-a: hovering card-b without Option draws the `24` ruler; a plain drag of card-b down 16px sets the gap to 40; a plain click on stack-a selects it with measuring still on; Escape stops measuring and keeps the selection; Escape again deselects; the button reads `Stop measuring` while on |
 | 89 | X-ray button | The header's x-ray button turns x-ray on and lights up; the x key turns it off and the button dims; the button does not collapse the panel |
+| 90 | Movable panel | Dragging the header 120px left and 60px up moves the panel by that and nothing collapses; a 2px drag collapses as a click; a drag that starts on a crumb moves the panel and selects nothing; the position survives sleep and wake; shrinking the window keeps the panel inside it |
 
 ## Test Plan
 

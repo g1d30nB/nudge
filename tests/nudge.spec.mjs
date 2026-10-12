@@ -1653,7 +1653,8 @@ test('77 the hover box carries a tag naming the element and its size', async ({ 
   const b = await rect(page, '[data-test=card-a]');
   await page.mouse.move(b.cx, b.cy);
   const tag = () => page.evaluate(() => { const t = window.__nudge._state.els.hoverTag; return { text: t.textContent, top: t.style.top, shown: getComputedStyle(t.parentNode).display !== 'none' }; });
-  expect(await tag()).toEqual({ text: `div.card.card-a · 360×${Math.round(b.height)}`, top: '-19px', shown: true });
+  await page.mouse.move(b.cx + 1, b.cy);   // the scroll into view can land after the first move and hide the box
+  await expect.poll(tag).toEqual({ text: `div.card.card-a · 360×${Math.round(b.height)}`, top: '-19px', shown: true });
   await page.evaluate(() => document.querySelector('[data-test=card-a]').scrollIntoView({ block: 'start' }));
   const b2 = await rect(page, '[data-test=card-a]');
   await page.mouse.move(b2.cx, b2.cy);
@@ -1941,4 +1942,50 @@ test('89 the header x-ray button toggles x-ray without collapsing the panel', as
   await page.keyboard.press('x');
   expect(await page.evaluate(() => window.__nudge._state.xray)).toBe(false);
   expect(await lit()).toBe('rgb(58, 55, 51)');
+});
+
+/* ───────────── movable panel (check 90) ───────────── */
+
+const panelRect = (page) => page.evaluate(() => { const b = window.__nudge._state.els.panel.getBoundingClientRect(); return { left: Math.round(b.left), top: Math.round(b.top), right: Math.round(b.right), bottom: Math.round(b.bottom) }; });
+const headPoint = (page) => page.evaluate(() => { const b = document.querySelector('#nudge-head strong').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
+
+test('90 the panel moves by its header, a click still collapses, and it stays on screen', async ({ page }) => {
+  await serveDormant(page, 'http://localhost:4173');
+  await page.evaluate(() => window.__nudge.wake());
+  const before = await panelRect(page);
+  let [x, y] = await headPoint(page);
+  await drag(page, [x, y], [x - 120, y - 60]);
+  const after = await panelRect(page);
+  expect(after.left).toBe(before.left - 120);
+  expect(after.top).toBe(before.top - 60);
+  expect(await collapsed(page)).toBe(false);
+  // A 2px movement is a click.
+  [x, y] = await headPoint(page);
+  await drag(page, [x, y], [x + 2, y + 1]);
+  expect(await collapsed(page)).toBe(true);
+  expect(await panelRect(page)).toMatchObject({ left: after.left, top: after.top });
+  [x, y] = await headPoint(page);
+  await drag(page, [x, y], [x + 1, y]);
+  expect(await collapsed(page)).toBe(false);
+  // A drag that starts on a crumb moves the panel and selects nothing.
+  await select(page, TAGLINE);
+  const crumb = page.locator('#nudge-status [data-crumb]').first();
+  const cb = await crumb.boundingBox();
+  await drag(page, [cb.x + 4, cb.y + cb.height / 2], [cb.x + 44, cb.y + 30 + cb.height / 2]);
+  expect(await selectedIs(page, TAGLINE)).toBe(true);
+  const moved = await panelRect(page);
+  expect(moved.left).toBe(after.left + 40);
+  expect(moved.top).toBeLessThanOrEqual(after.top + 30);        // the panel grew with the type controls, so the top may have been clamped
+  expect(moved.bottom).toBeLessThanOrEqual(await page.evaluate(() => innerHeight) - 8);
+  // Growing after it was placed (a text selection adds the type controls) keeps it inside too.
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { const p = window.__nudge._state.els.panel; p.style.top = (innerHeight - 60) + 'px'; });
+  await select(page, TAGLINE);
+  await expect.poll(async () => (await panelRect(page)).bottom).toBeLessThanOrEqual(await page.evaluate(() => innerHeight) - 8);
+  // The position survives sleep and wake, and a smaller window keeps the panel inside it.
+  await page.evaluate(() => window.__nudge.sleep());
+  await page.evaluate(() => window.__nudge.wake());
+  expect((await panelRect(page)).left).toBe(after.left + 40);
+  await page.setViewportSize({ width: 500, height: 400 });
+  await expect.poll(async () => { const r = await panelRect(page); return r.right <= 500 - 8 && r.bottom <= 400 - 8 && r.left >= 8 && r.top >= 8; }).toBe(true);
 });
