@@ -8,7 +8,8 @@ Installed bookmarks are pinned to a release. To get a new release, reinstall the
 
 - **Undo and redo.** Command-Z (Control-Z on Windows and Linux) undoes the last change of any kind, Shift-Command-Z, Control-Y or Control-Shift-Z redoes it. A match, a siblings apply and a Reset each undo in one step. Copying a batch is the commit point: sent changes are never undone back into the next batch.
 
-- **Previews know their range.** A change belongs to the breakpoint range it was made in. When the window leaves that range the preview is lifted and the row says `made at 1280px, hidden at this width`; back in range it returns. A hidden element changed again starts fresh at the new width. The batch records the width each change was made at, not the window at copy time.
+- **Previews know their range.** A change belongs to the breakpoint range it was made in. When the window leaves that range the preview is lifted and the row says `made at 1280px, hidden at this width`; back in range it returns. The batch records the width each change was made at, not the window at copy time.
+- **One change per breakpoint.** The same element can be corrected once in each range: the desktop change parks while you work on the mobile layout and comes back when the window widens. The batch carries each as its own entry, `measured at 761px wide, in the 641px to 900px range`.
 
 ### Fixed
 

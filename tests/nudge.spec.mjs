@@ -2147,7 +2147,7 @@ test('94 a preview is lifted outside the breakpoint range it was made in, and re
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('nudge:expect')).items.find((i) => i.path.includes('nth-child(1)')).checks.width)).toBe(520);
 });
 
-test('95 text, siblings and gaps lift too; a hidden element edited again starts fresh; no breakpoints, no hiding', async ({ page }) => {
+test('95 text, siblings and gaps lift too; a hidden element edited again keeps both; no breakpoints, no hiding', async ({ page }) => {
   await inject(page);
   await select(page, '[data-test=edit]');
   await dblclickText(page, '[data-test=edit]');
@@ -2170,19 +2170,20 @@ test('95 text, siblings and gaps lift too; a hidden element edited again starts 
   expect(await page.evaluate(() => document.querySelector('[data-test=edit]').textContent)).toBe('Plans your team will read!');
   expect(await page.evaluate(() => document.querySelector('[data-test=item-3]').style.width)).toBe('300px');
   expect(await page.evaluate(() => document.querySelector('#cards').style.rowGap)).toBe('40px');
-  // Acting on a hidden element drops the old change and starts fresh in this range.
+  // Acting on a hidden element keeps its change for the other range and starts a fresh one here.
   await page.setViewportSize({ width: 800, height: 720 });
   await expect(hiddenRows(page)).toHaveCount(3);
   await select(page, '[data-test=item-1]');
   await page.keyboard.press('ArrowRight');
-  await expect(status(page)).toContainText('starts from the page at 800px');
-  const item1 = (await changes(page)).find((r) => r.test === 'item-1');
-  expect(item1.w).toBeNull(); expect(item1.dx).toBe(1);
+  await expect(status(page)).toHaveText('moved right 1px');
+  const item1 = (await changes(page)).filter((r) => r.test === 'item-1');
+  expect(item1.map((r) => [r.w, r.dx])).toEqual(expect.arrayContaining([[300, 0], [null, 1]]));
   expect(await page.evaluate(() => document.querySelector('[data-test=item-2]').style.width)).toBe('');
-  await expect(hiddenRows(page)).toHaveCount(2);
-  // Undo of something made at 1280 keeps it hidden here.
+  await expect(hiddenRows(page)).toHaveCount(3);
+  // Undo removes the fresh one; the parked one stays parked.
   await page.keyboard.press('Meta+z');
   await expect(hiddenRows(page)).toHaveCount(3);
+  expect((await changes(page)).filter((r) => r.test === 'item-1')).toHaveLength(1);
   expect(await page.evaluate(() => document.querySelector('[data-test=item-1]').style.width)).toBe('');
   // A page without media queries never hides anything.
   await page.route(`${ORIGIN}/plain.html`, async (route) => route.fulfill({ contentType: 'text/html', body: (await readFile(path.join(here, 'fixture.html'), 'utf8')).replace(/@media[^{]*\{[^}]*\}\s*\}/g, '') }));
@@ -2195,4 +2196,43 @@ test('95 text, siblings and gaps lift too; a hidden element edited again starts 
   await tick(page);
   await expect(hiddenRows(page)).toHaveCount(0);
   expect(await styleOf(page, '[data-test=card-a]')).toMatchObject({ width: '520px' });
+});
+
+/* ───────────── one change per breakpoint range (check 96) ───────────── */
+
+test('96 an element holds one change per breakpoint range, and the batch carries each with its width', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=card-a]');
+  await resizeE(page, '[data-test=card-a]', 160);
+  await page.setViewportSize({ width: 800, height: 720 });
+  await expect(hiddenRows(page)).toHaveCount(1);
+  await select(page, '[data-test=card-a]');
+  await page.keyboard.press('ArrowRight');
+  expect((await changes(page)).map((r) => [r.w, r.dx])).toEqual(expect.arrayContaining([[520, 0], [null, 1]]));
+  expect(await styleOf(page, '[data-test=card-a]')).toEqual({ width: '', transform: 'translate(1px, 0px)' });
+  const lines = await reportLines(page);
+  expect(lines[1]).toBe('measured at 1280px and 800px wide, in the 1200px and up and the 600px to 899px range (breakpoints at 600, 900, 1200px)');
+  expect(lines.filter((l) => l.startsWith('measured at ') && l.includes('range') && !l.includes('breakpoints'))).toEqual([
+    'measured at 1280px wide, in the 1200px and up range', 'measured at 800px wide, in the 600px to 899px range',
+  ]);
+  expect(lines).toContain('width 360px → 520px');
+  expect(lines).toContain('moved right 1px');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect.poll(() => styleOf(page, '[data-test=card-a]')).toEqual({ width: '520px', transform: '' });   // the swap follows the resize event
+  await expect(hiddenRows(page)).toHaveCount(1);
+  await expect(hiddenRows(page).first()).toContainText('made at 800px, hidden at this width');
+  await page.setViewportSize({ width: 800, height: 720 });
+  await expect.poll(() => styleOf(page, '[data-test=card-a]')).toEqual({ width: '', transform: 'translate(1px, 0px)' });
+  await expect(hiddenRows(page)).toHaveCount(1);
+  // The parked row's own undo removes just that record.
+  await hiddenRows(page).first().locator('button', { hasText: 'undo' }).click();
+  expect(await changes(page)).toHaveLength(1);
+  await expect(hiddenRows(page)).toHaveCount(0);
+  await page.keyboard.press('Meta+z');
+  expect(await changes(page)).toHaveLength(2);
+  await copyAndSettle(page);
+  expect(await page.evaluate(() => window.__nudge._state.changes.every((r) => r.sent))).toBe(true);
+  await page.locator('#nudge-copy').click();   // Clear preview
+  expect(await changes(page)).toHaveLength(0);
+  expect(await styleOf(page, '[data-test=card-a]')).toEqual({ width: '', transform: '' });
 });
