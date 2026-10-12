@@ -63,6 +63,9 @@
     pin: null,              // the element "m" matches the selection to
     measure: false,         // rulers and gap drags without holding Option, from the Measure button
     panelMoved: false,      // set when a header drag has just moved the panel, so the release is not a click
+    undo: [],               // world snapshots taken before each change, newest last
+    redo: [],               // snapshots undone, for redo
+    restoring: false,       // true while a snapshot is being put back, so nothing checkpoints
     matching: false,        // true while matchPin drives the setters, so they keep the match note
     history: [],            // every batch sent this page load: { batch, at, text }
     recopies: 0,            // Re-copy presses since the last batch, for the nudge when a paste keeps failing
@@ -184,9 +187,15 @@
     let r = state.changes.get(el);
     if (r && r.sent) {
       // The agent may already have applied this change, so its baseline no longer exists in the code.
+      checkpoint();
       undo(r); r = null; state.notice = FRESH;
     }
     if (r) return r;
+    checkpoint();
+    return create(el);
+  }
+  function create(el) {
+    let r;
     const c = cs(el);
     const rect = el.getBoundingClientRect();
     r = {
@@ -298,9 +307,10 @@
   function toggleSiblings() {
     const el = state.selected, r = state.changes.get(el);
     if (!r || isNoop(r) || r.removed) { setStatus('Change this element first, then press a to apply the same to its siblings.'); return; }
-    if (r.also) { releaseSiblings(r); render(); setStatus(withNotice(summary(r))); return; }
+    if (r.also) { checkpoint(); releaseSiblings(r); render(); setStatus(withNotice(summary(r))); return; }
     const sibs = siblingsOf(el);
     if (!sibs.length) { setStatus('No sibling shares this element\'s tag and classes.'); return; }
+    checkpoint();
     r.also = sibs.map((x) => { const orig = {}; SIB_PROPS.forEach((k) => { orig[k] = x.style[k]; }); return { el: x, orig }; });
     syncSiblings(r); render(); updateBoxes();
     setStatus(withNotice(summary(r)));
@@ -331,6 +341,7 @@
     // A paragraph's box is its content, so for text elements only type and colour are matched; a card, an
     // image or a wrapper takes the pin's size as well.
     const sizes = !isTextEl(el);
+    checkpoint();
     state.matching = true;
     try {
       if (sizes && Math.abs(pb.width - eb.width) >= 0.5) { setSize(SIZE[0], pb.width, 'typed'); props.push('width'); }
@@ -455,6 +466,7 @@
     const el = state.selected;
     if (!el || !ownText(el) || !isFinite(value)) return;
     state.notice = null;
+    checkpoint();
     const r = rec(el);
     if (!r.baseType) r.baseType = readType(cs(el));
     if (!state.typeCands) state.typeCands = typeCandidates(el);
@@ -562,6 +574,7 @@
     const el = state.selected;
     if (!el) return;
     state.notice = null;
+    checkpoint();
     const r = rec(el);
     if (!r.baseColour[d.key]) { const rgba = toRGBA(cs(el)[d.key]); r.baseColour[d.key] = { rgba, names: matchNames(rgba) }; }
     const base = r.baseColour[d.key];
@@ -628,7 +641,7 @@
   const sentRecs = () => allRecs().filter((r) => r.sent);
   const unsentRecs = () => allRecs().filter((r) => !r.sent);
 
-  function resetAll() { if (state.editing) endEdit(); allRecs().forEach(undo); state.notice = null; select(null); render(); }
+  function resetAll() { if (state.editing) endEdit(); if (allRecs().length) checkpoint(); allRecs().forEach(undo); state.notice = null; select(null); render(); }
 
   /* ────────────────────────── text editing ────────────────────────── */
 
@@ -646,6 +659,7 @@
     const why = cannotEdit(el);
     if (why) { setStatus(`Cannot edit text: ${why}.`); return; }
     state.notice = null;
+    checkpoint();
     const r = rec(el);
     if (!r.origNodes) { r.origNodes = [...el.childNodes].map((n) => n.cloneNode(true)); r.baseText = el.textContent; }
     state.editing = { el, r, attr: el.getAttribute('contenteditable'), userSelect: el.style.userSelect };
@@ -1032,6 +1046,88 @@
     if (document.readyState === 'complete') go(); else window.addEventListener('load', go, { once: true });
   }
 
+  /* ────────────────────────── undo and redo ────────────────────────── */
+
+  // Command-Z (Control-Z elsewhere) undoes the last change; Shift-Command-Z, Control-Y or Control-Shift-Z
+  // redoes it. A snapshot of every record is taken just before a change starts; undo puts the previous
+  // snapshot back, element by element, through the same apply() a change uses. Sending a batch is a commit
+  // and empties both stacks, so a change can never be un-sent and sent twice. Text editing keeps the
+  // browser's own undo while the caret is in the element.
+  const UNDO_LIMIT = 100;
+  const ids = new WeakMap(); let nextId = 1;
+  const idOf = (el) => { if (!ids.has(el)) ids.set(el, nextId++); return ids.get(el); };
+  function snapRecord(r) {
+    return {
+      el: r.el,
+      dx: r.dx, dy: r.dy, w: r.w, h: r.h, removed: r.removed, locked: r.locked, snaps: r.snaps.slice(), moveAligned: r.moveAligned,
+      text: r.text, baseText: r.baseText, origNodes: r.origNodes ? r.origNodes.map((n) => n.cloneNode(true)) : null,
+      type: Object.fromEntries(Object.entries(r.type).map(([k, v]) => [k, { to: v.to, match: v.match || null }])),
+      baseType: r.baseType ? { ...r.baseType } : null,
+      colour: JSON.parse(JSON.stringify(r.colour)), baseColour: JSON.parse(JSON.stringify(r.baseColour)),
+      sent: r.sent, sentBatch: r.sentBatch, sentSeq: r.sentSeq,
+      matched: r.matched ? { el: r.matched.el, props: r.matched.props.slice() } : null,
+      also: r.also ? r.also.map((x) => ({ el: x.el, orig: { ...x.orig } })) : null,
+      gap: r.gap ? { ...r.gap } : null,
+    };
+  }
+  // A comparable text for a snapshot: elements by id, everything else by value.
+  const snapKey = (snap) => JSON.stringify([...snap.values()].map((x) => [idOf(x.el), x.dx, x.dy, x.w, x.h, x.removed, x.text,
+    Object.entries(x.type).map(([k, v]) => [k, v.to]), x.colour, x.sent, x.gap && [x.gap.from, x.gap.to, idOf(x.gap.target), x.gap.prop],
+    x.also && x.also.map((a) => idOf(a.el)), x.matched && [idOf(x.matched.el), x.matched.props]]));
+  function snapWorld() { const m = new Map(); allRecs().forEach((r) => m.set(r.el, snapRecord(r))); return m; }
+  function checkpoint() {
+    if (state.restoring || state.matching) return;
+    const snap = snapWorld(), key = snapKey(snap);
+    const last = state.undo[state.undo.length - 1];
+    if (last && last.key === key) return;
+    state.undo.push({ snap, key });
+    if (state.undo.length > UNDO_LIMIT) state.undo.shift();
+    state.redo = [];
+  }
+  function restoreWorld(snap) {
+    state.restoring = true;
+    try {
+      if (state.editing) exitEditMode();
+      allRecs().forEach((r) => { if (!snap.has(r.el) || !document.contains(r.el)) undo(r); });
+      snap.forEach((x, el) => {
+        if (!document.contains(el)) return;
+        const existing = state.changes.get(el);
+        if (existing) { releaseSiblings(existing); if (existing.gap) { existing.gap.target.style[existing.gap.prop] = existing.gap.origInline; existing.gap = null; } }
+        const r = existing || create(el);
+        Object.assign(r, {
+          dx: x.dx, dy: x.dy, w: x.w, h: x.h, removed: x.removed, locked: x.locked, snaps: x.snaps.slice(), moveAligned: x.moveAligned,
+          baseText: x.baseText, origNodes: x.origNodes ? x.origNodes.map((n) => n.cloneNode(true)) : null,
+          type: Object.fromEntries(Object.entries(x.type).map(([k, v]) => [k, { to: v.to, match: v.match }])), baseType: x.baseType ? { ...x.baseType } : null,
+          colour: JSON.parse(JSON.stringify(x.colour)), baseColour: JSON.parse(JSON.stringify(x.baseColour)),
+          sent: x.sent, sentBatch: x.sentBatch, sentSeq: x.sentSeq,
+          matched: x.matched ? { el: x.matched.el, props: x.matched.props.slice() } : null,
+          also: x.also ? x.also.map((a) => ({ el: a.el, orig: { ...a.orig } })) : null,
+          gap: x.gap ? { ...x.gap } : null,
+        });
+        if (x.text != null) { r.text = x.text; el.textContent = x.text; }
+        else { r.text = null; if (r.origNodes) el.replaceChildren(...r.origNodes.map((n) => n.cloneNode(true))); }
+        apply(r);
+      });
+    } finally { state.restoring = false; }
+    state.notice = null;
+    render(); updateBoxes(); renderProps();
+  }
+  function undoLast() {
+    if (!state.undo.length) { setStatus(sentRecs().length ? 'Nothing to undo. Sent changes are not undone; clear the preview instead.' : 'Nothing to undo.'); return; }
+    const cur = snapWorld();
+    state.redo.push({ snap: cur, key: snapKey(cur) });
+    restoreWorld(state.undo.pop().snap);
+    setStatus(`Undone. ${state.undo.length} more to undo.`);
+  }
+  function redoLast() {
+    if (!state.redo.length) { setStatus('Nothing to redo.'); return; }
+    const cur = snapWorld();
+    state.undo.push({ snap: cur, key: snapKey(cur) });
+    restoreWorld(state.redo.pop().snap);
+    setStatus(`Redone. ${state.redo.length} more to redo.`);
+  }
+  function clearUndo() { state.undo = []; state.redo = []; }
+
   /* ────────────────────────── overlay ────────────────────────── */
 
   const overlay = document.createElement('div');
@@ -1208,7 +1304,7 @@
       <button data-nudge id="nudge-recopy" style="display:none;background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Re-copy</button>
       <button data-nudge id="nudge-reset" style="background:#2c2a27;color:#ece7df;border:0;border-radius:6px;padding:8px 10px;font:12px system-ui;cursor:pointer">Reset</button>
     </div>
-    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · double-click edits text · ⌫ remove · arrows nudge · ⌥↑ parent · ⌥-hover measures, ⌥-drag sets the gap · p pin, m match · a siblings · x x-ray · shift disables snap · esc deselect</div>`;
+    <div data-nudge id="nudge-hint" style="padding:0 14px 10px;color:#6f6a62;font-size:11px">drag to move · handles to resize · double-click edits text · ⌫ remove · ⌘Z undo · arrows nudge · ⌥↑ parent · ⌥-hover measures, ⌥-drag sets the gap · p pin, m match · a siblings · x x-ray · shift disables snap · esc deselect</div>`;
 
   const $ = (id) => panel.querySelector('#' + id);
   const setStatus = (t) => { $('nudge-status').textContent = t; };
@@ -1333,6 +1429,7 @@
   function removeSelected() {
     if (!state.selected) return;
     state.notice = null;
+    checkpoint();
     const r = rec(state.selected); r.removed = true; apply(r);
     finish(r); select(null);
     if (state.notice) setStatus(state.notice);
@@ -1386,7 +1483,7 @@
       r.snaps.forEach((t) => body.appendChild(node('div', 'color:#e0447a', t)));
       row.appendChild(body);
       const btn = node('button', 'background:none;border:1px solid #3a3733;color:#9c958b;border-radius:5px;padding:2px 7px;font:11px system-ui;cursor:pointer', 'undo');
-      btn.addEventListener('click', () => { undo(r); if (state.selected === r.el) updateBoxes(); render(); });
+      btn.addEventListener('click', () => { checkpoint(); undo(r); if (state.selected === r.el) updateBoxes(); render(); });
       row.appendChild(btn);
       list.appendChild(row);
     });
@@ -1479,6 +1576,7 @@
     state.batch++;
     state.history.push({ batch: state.batch, at: new Date().toISOString(), text });
     state.recopies = 0;
+    clearUndo();   // sending is a commit: a sent change is never undone back into the next batch
     recs.forEach((r) => { r.sent = true; r.sentBatch = state.batch; r.sentSeq = state.reloadSeq; });
     state.notice = null;
     state.copyLock = true;
@@ -1497,6 +1595,7 @@
     state.batch++;
     state.history.push({ batch: state.batch, at: new Date().toISOString(), text });
     state.recopies = 0;
+    clearUndo();   // sending is a commit: a sent change is never undone back into the next batch
     recs.forEach((r) => { r.sent = true; r.sentBatch = state.batch; r.sentSeq = state.reloadSeq; });
     state.notice = null;
     render();
@@ -1514,6 +1613,7 @@
   }
 
   function clearPreview() {
+    clearUndo();
     sentRecs().forEach(undo);
     state.notice = null;
     render(); updateBoxes();
@@ -1536,6 +1636,7 @@
     const el = state.selected;
     if (!el || !isFinite(value)) return;
     state.notice = null;
+    checkpoint();
     const r = rec(el);
     const b = el.getBoundingClientRect();
     let v = Math.max(d.min, value);
@@ -1817,6 +1918,7 @@
 
   // Bind the drag to a record and measure its starting geometry.
   function prime(d) {
+    checkpoint();
     const r = rec(d.el);
     const b = d.el.getBoundingClientRect();
     state.candidates = collectCandidates(d.el);
@@ -1942,6 +2044,11 @@
     }
     // Panel buttons keep focus after a click because page mousedowns are cancelled, so only text fields may swallow keys.
     if (isTool(e.target) && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if ((e.metaKey || e.ctrlKey) && /^[zyZY]$/.test(e.key)) {
+      e.preventDefault();
+      if (/^[yY]$/.test(e.key) || e.shiftKey) redoLast(); else undoLast();
+      return;
+    }
     if (e.key === 'Escape') { if (state.measure) toggleMeasure(); else select(null); return; }
     if ((e.key === 'x' || e.key === 'X') && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); toggleXray(); return; }
     if (!state.selected) return;
@@ -1971,6 +2078,7 @@
     if (map[e.key]) {
       e.preventDefault();
       state.notice = null;
+      checkpoint();
       const r = rec(state.selected);
       state.candidates = collectCandidates(state.selected);
       r.dx += map[e.key][0]; r.dy += map[e.key][1];
@@ -2059,7 +2167,7 @@
   function sleep() {
     if (!state.awake) return;
     state.measure = false;
-    resetAll();
+    resetAll(); clearUndo();
     pageListeners.forEach(([t, ev, fn]) => t.removeEventListener(ev, fn, true));
     headObserver.disconnect(); headTarget = null;
     state.awake = false;
@@ -2136,6 +2244,7 @@
   window.__nudge = {
     destroy, wake, sleep, toggle, close, report, take, verify,
     history: () => state.history.slice(),
+    undo: undoLast, redo: redoLast,
     breakpoints: () => ({ points: breakpoints().points.slice(), unreadable: breakpoints().unreadable, range: rangeOf(innerWidth).text }),
     // Test hook. Read-only view of internal state; no behavioural effect.
     _state: {
@@ -2153,6 +2262,8 @@
       get xray() { return state.xray; },
       get pin() { return state.pin; },
       get measure() { return state.measure; },
+      get undoDepth() { return state.undo.length; },
+      get redoDepth() { return state.redo.length; },
       get verdict() { return state.verdict; },
       els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot, bpLayer, xrayLayer, rulerLayer, hoverTag, pinBox },
     },
