@@ -40,7 +40,9 @@
 
   const state = {
     selected: null,
-    changes: new Map(),     // el -> record
+    changes: new Map(),     // el -> record, for the breakpoint range the window is in now
+    parked: [],             // records made in another range, lifted from the page until the window returns there
+    seq: 0,                 // creation order of records, so the list and the batch keep it across parking
     drag: null,
     candidates: [],
     batch: 0,               // number of the most recent copied batch
@@ -190,10 +192,7 @@
       // The agent may already have applied this change, so its baseline no longer exists in the code.
       undo(r); r = null; state.notice = FRESH;
     }
-    if (r && r.hidden) {
-      // Its earlier change belongs to another width; a change here starts from the page as it renders here.
-      undo(r); r = null; state.notice = `Its change from another width was dropped; this one starts from the page at ${innerWidth}px.`;
-    }
+    if (r && r.hidden) { park(r); r = null; }   // belongs to another range; a change here is its own record
     return r || create(el);
   }
   function create(el) {
@@ -218,6 +217,7 @@
       madeAt: innerWidth, madeAtH: innerHeight,                       // the viewport the change was measured in
       range: breakpoints().points.length ? rangeOf(innerWidth) : null,  // its breakpoint range, null on a page without any
       hidden: false,                                                   // preview lifted because the window left that range
+      seq: ++state.seq,
     };
     el.style.transition = 'none';
     if (c.maxWidth !== 'none') r.base.capped = heldByMaxWidth(el);
@@ -255,18 +255,18 @@
     if (r.text != null) r.el.textContent = r.text;
     apply(r);
   }
+  // A record whose range excludes the window width parks: lifted from the page and out of state.changes, so
+  // the same element can take a fresh change in the range the window is in now. Back in range, it returns.
+  function park(r) { if (!r.hidden) { r.hidden = true; lift(r); } if (state.changes.get(r.el) === r) state.changes.delete(r.el); if (!state.parked.includes(r)) state.parked.push(r); }
+  function unpark(r) { state.parked = state.parked.filter((x) => x !== r); r.hidden = false; state.changes.set(r.el, r); reapply(r); }
   function syncRanges() {
     let changed = false;
-    allRecs().forEach((r) => {
-      const hide = outOfRange(r);
-      if (hide === r.hidden) return;
-      r.hidden = hide; changed = true;
-      if (hide) lift(r); else reapply(r);
-    });
+    [...state.changes.values()].forEach((r) => { if (outOfRange(r)) { park(r); changed = true; } });
+    state.parked.slice().forEach((r) => { if (!outOfRange(r) && !state.changes.has(r.el)) { unpark(r); changed = true; } });
     if (!changed) return;
-    const hidden = allRecs().filter((r) => r.hidden).length;
+    const hidden = state.parked.length;
     render(); updateBoxes(); renderProps();
-    if (hidden) setStatus(`${hidden} preview${hidden > 1 ? 's' : ''} hidden at this width: made in the ${allRecs().find((r) => r.hidden).range.text} range.`);
+    if (hidden) setStatus(`${hidden} preview${hidden > 1 ? 's' : ''} hidden at this width: made in the ${state.parked[0].range.text} range.`);
     else if (state.selected) showCrumbs(state.selected); else setStatus(idleStatus());
   }
 
@@ -658,7 +658,7 @@
     if (!isNoop(r)) return;
     r.el.style.transition = r.orig.transition;
     releaseSiblings(r);
-    state.changes.delete(r.el);
+    forget(r);
   }
 
   function undo(r) {
@@ -672,10 +672,11 @@
     COLOUR.forEach((d) => { el.style[d.key] = o[d.key]; });
     if (r.gap) { r.gap.target.style[r.gap.prop] = r.gap.origInline; r.gap = null; }
     releaseSiblings(r);
-    state.changes.delete(el);
+    forget(r);
   }
 
-  const allRecs = () => [...state.changes.values()];
+  const allRecs = () => [...state.changes.values(), ...state.parked].sort((a, b) => a.seq - b.seq);
+  const forget = (r) => { if (state.changes.get(r.el) === r) state.changes.delete(r.el); state.parked = state.parked.filter((x) => x !== r); };
   const sentRecs = () => allRecs().filter((r) => r.sent);
   const unsentRecs = () => allRecs().filter((r) => !r.sent);
 
@@ -1099,7 +1100,7 @@
   const idOf = (el) => { if (!ids.has(el)) ids.set(el, nextId++); return ids.get(el); };
   function snapRecord(r) {
     return {
-      el: r.el,
+      el: r.el, base: { ...r.base }, orig: { ...r.orig },
       dx: r.dx, dy: r.dy, w: r.w, h: r.h, removed: r.removed, locked: r.locked, snaps: r.snaps.slice(), moveAligned: r.moveAligned,
       text: r.text, baseText: r.baseText, origNodes: r.origNodes ? r.origNodes.map((n) => n.cloneNode(true)) : null,
       type: Object.fromEntries(Object.entries(r.type).map(([k, v]) => [k, { to: v.to, match: v.match || null }])),
@@ -1109,14 +1110,15 @@
       matched: r.matched ? { el: r.matched.el, props: r.matched.props.slice() } : null,
       also: r.also ? r.also.map((x) => ({ el: x.el, orig: { ...x.orig } })) : null,
       gap: r.gap ? { ...r.gap } : null,
-      madeAt: r.madeAt, madeAtH: r.madeAtH, range: r.range, hidden: r.hidden,
+      madeAt: r.madeAt, madeAtH: r.madeAtH, range: r.range, hidden: r.hidden, seq: r.seq,
     };
   }
   // A comparable text for a snapshot: elements by id, everything else by value.
   const snapKey = (snap) => JSON.stringify([...snap.values()].map((x) => [idOf(x.el), x.dx, x.dy, x.w, x.h, x.removed, x.text,
     Object.entries(x.type).map(([k, v]) => [k, v.to]), x.colour, x.sent, x.gap && [x.gap.from, x.gap.to, idOf(x.gap.target), x.gap.prop],
     x.also && x.also.map((a) => idOf(a.el)), x.matched && [idOf(x.matched.el), x.matched.props]]));
-  function snapWorld() { const m = new Map(); allRecs().forEach((r) => m.set(r.el, snapRecord(r))); return m; }
+  const recKey = (r) => `${idOf(r.el)}@${r.range ? `${r.range.lo}-${r.range.hi}` : 'any'}`;
+  function snapWorld() { const m = new Map(); allRecs().forEach((r) => m.set(recKey(r), snapRecord(r))); return m; }
   function checkpoint() {
     if (state.restoring || state.matching) return;
     const snap = snapWorld(), key = snapKey(snap);
@@ -1130,12 +1132,12 @@
     state.restoring = true;
     try {
       if (state.editing) exitEditMode();
-      allRecs().forEach((r) => { if (!snap.has(r.el) || !document.contains(r.el)) undo(r); });
-      snap.forEach((x, el) => {
-        if (!document.contains(el)) return;
-        const existing = state.changes.get(el);
-        if (existing) { releaseSiblings(existing); if (existing.gap) { existing.gap.target.style[existing.gap.prop] = existing.gap.origInline; existing.gap = null; } }
-        const r = existing || create(el);
+      allRecs().forEach(undo);   // clear everything, then rebuild each record from its snapshot
+      snap.forEach((x) => {
+        const el = x.el;
+        if (!document.contains(el) || state.changes.has(el)) return;
+        const r = create(el);
+        r.base = { ...x.base }; r.orig = { ...x.orig };
         Object.assign(r, {
           dx: x.dx, dy: x.dy, w: x.w, h: x.h, removed: x.removed, locked: x.locked, snaps: x.snaps.slice(), moveAligned: x.moveAligned,
           baseText: x.baseText, origNodes: x.origNodes ? x.origNodes.map((n) => n.cloneNode(true)) : null,
@@ -1145,11 +1147,12 @@
           matched: x.matched ? { el: x.matched.el, props: x.matched.props.slice() } : null,
           also: x.also ? x.also.map((a) => ({ el: a.el, orig: { ...a.orig } })) : null,
           gap: x.gap ? { ...x.gap } : null,
-          madeAt: x.madeAt, madeAtH: x.madeAtH, range: x.range, hidden: outOfRange({ range: x.range }),
+          madeAt: x.madeAt, madeAtH: x.madeAtH, range: x.range, hidden: false, seq: x.seq,
         });
-        if (x.text != null) { r.text = x.text; if (!r.hidden) el.textContent = x.text; }
+        if (x.text != null) { r.text = x.text; el.textContent = x.text; }
         else { r.text = null; if (r.origNodes) el.replaceChildren(...r.origNodes.map((n) => n.cloneNode(true))); }
         apply(r);
+        if (outOfRange(r)) park(r);
       });
     } finally { state.restoring = false; }
     state.notice = null;
@@ -1554,6 +1557,7 @@
     let responsive = false;
     recs.forEach((r, i) => {
       lines.push(`${i + 1}. ${label(r.el)}`);
+      if (widths.length > 1) lines.push(`   measured at ${r.madeAt}px wide${r.range ? `, in the ${r.range.text} range` : ''}`);
       if (r.matched && !r.removed && document.contains(r.matched.el)) lines.push(`   make this match ${label(r.matched.el)}: ${r.matched.props.join(', ')}`);
       if (r.removed) lines.push('   remove this element from the markup');
       else if (r.text != null) lines.push(`   ${textChange(collapse(r.baseText), collapse(r.text))}`);
@@ -2251,7 +2255,7 @@
   function reconcile() {
     keepMounted();
     let dropped = false;
-    allRecs().forEach((r) => { if (!document.contains(r.el)) { state.changes.delete(r.el); dropped = true; } });
+    allRecs().forEach((r) => { if (!document.contains(r.el)) { forget(r); dropped = true; } });
     if (state.editing && !document.contains(state.editing.el)) exitEditMode();
     if (state.selected && !document.contains(state.selected)) select(null);
     if (dropped) render();
@@ -2310,7 +2314,7 @@
     // Test hook. Read-only view of internal state; no behavioural effect.
     _state: {
       get selected() { return state.selected; },
-      get changes() { return [...state.changes.values()]; },
+      get changes() { return allRecs(); },
       get candidates() { return state.candidates; },
       get drag() { return state.drag; },
       get batch() { return state.batch; },
