@@ -1,6 +1,6 @@
 {
   "name": "nudge",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Open nudge in Claude Code's built-in browser and pull its batch into the prompt. /nudge, /nudge batch, /nudge batch send, /nudge at 390, /nudge dark, /nudge verify, /nudge history.",
   "author": { "name": "Gideon Bullock" }
 }

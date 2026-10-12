@@ -3,7 +3,7 @@ import type { Register } from 'claude-code'
 // nudge.js stays exactly as published; this mod only loads it into the page the built-in browser shows
 // and carries its batch back into the prompt box.
 // Pinned to a release tag, like the bookmarklet. Bump it when a release changes what the mod relies on.
-const NUDGE_URL = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js'
+const NUDGE_URL = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js'
 
 // Runs in the page, as the bookmarklet does: toggle if loaded, else load.
 const OPEN_SCRIPT = `(function () {

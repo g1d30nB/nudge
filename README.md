@@ -33,7 +33,7 @@ A bookmark needs a bookmarks bar, so open the page you are working on in an ordi
 There is no clone, no server, no npm, and nothing is added to your project. The bookmark loads `nudge.js` from jsDelivr when you click it. If you would rather make the bookmark by hand, paste this line as its URL:
 
 ```
-javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
+javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();
 ```
 
 It works on any page in the browser, including a live site. The batch is only useful if you have the source to hand.
@@ -65,12 +65,12 @@ Add nudge to this project so that it loads only while I am developing.
 
 nudge is a design-correction tool: https://github.com/g1d30nB/nudge. It is one script file. Add this tag to the layout or entry point that every page shares, so it is present when I run the dev server and absent from any production build:
 
-<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js" data-nudge-dormant></script>
+<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js" data-nudge-dormant></script>
 
 Rules:
 - Keep the data-nudge-dormant attribute exactly as written. Without it nudge opens a panel on every page load.
 - Guard the tag with this framework's own development flag (for example import.meta.env.DEV, process.env.NODE_ENV === 'development', or import.meta.dev), so it cannot reach a production build. Do not rely on a runtime check instead.
-- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.3.1 into the public folder and point the tag at /nudge.js instead.
+- If this project has a Content-Security-Policy that blocks outside scripts, download nudge.js from https://github.com/g1d30nB/nudge/releases/tag/v1.4.0 into the public folder and point the tag at /nudge.js instead.
 - Change nothing else.
 - When you are done, start the dev server, tell me which file you changed, and remind me that the small blue dot in the bottom left corner of the page opens nudge.
 ```
@@ -100,7 +100,7 @@ If you would rather add it yourself, each snippet below uses that framework's ow
 In a layout, or `src/pages/index.astro`, before `</body>`. `is:inline` stops Astro bundling it.
 
 ```astro
-{import.meta.env.DEV && <script is:inline src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js" data-nudge-dormant></script>}
+{import.meta.env.DEV && <script is:inline src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js" data-nudge-dormant></script>}
 ```
 </details>
 
@@ -112,7 +112,7 @@ In `app/layout.tsx`, inside `<body>` after `{children}`.
 ```tsx
 {process.env.NODE_ENV === 'development' && (
   // eslint-disable-next-line @next/next/no-sync-scripts
-  <script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js" data-nudge-dormant="" />
+  <script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js" data-nudge-dormant="" />
 )}
 ```
 </details>
@@ -125,7 +125,7 @@ In `src/main.jsx` or `main.tsx`. Vite's `index.html` has no conditionals, so add
 ```js
 if (import.meta.env.DEV) {
   const s = document.createElement('script')
-  s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js'
+  s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js'
   s.setAttribute('data-nudge-dormant', '')
   document.body.appendChild(s)
 }
@@ -144,7 +144,7 @@ In `src/routes/+layout.svelte`. A `{#if dev}` block in markup keeps the tag out 
   onMount(() => {
     if (import.meta.env.DEV) {
       const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js';
+      s.src = 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js';
       s.setAttribute('data-nudge-dormant', '');
       document.body.appendChild(s);
     }
@@ -163,7 +163,7 @@ In `app/app.vue` or `app.vue`.
 ```vue
 <script setup lang="ts">
 if (import.meta.dev) {
-  useHead({ script: [{ src: 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js', 'data-nudge-dormant': '' }] })
+  useHead({ script: [{ src: 'https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js', 'data-nudge-dormant': '' }] })
 }
 </script>
 ```
@@ -175,14 +175,14 @@ if (import.meta.dev) {
 There is no build, so there is no development switch and no first safeguard. Put the tag before `</body>` and remove it before you deploy. The address check would stop nudge running on a live domain, but do not rely on it; take the line out.
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.3.1/nudge.js" data-nudge-dormant></script>
+<script src="https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js" data-nudge-dormant></script>
 ```
 </details>
 
 <details>
 <summary>Self-hosting, for projects that block outside scripts</summary>
 
-Download `nudge.js` from the [release](https://github.com/g1d30nB/nudge/releases/tag/v1.3.1), put it in the project's public folder, and point the tag at `/nudge.js`. Same file, same guard, same attribute.
+Download `nudge.js` from the [release](https://github.com/g1d30nB/nudge/releases/tag/v1.4.0), put it in the project's public folder, and point the tag at `/nudge.js`. Same file, same guard, same attribute.
 
 ```html
 <script src="/nudge.js" data-nudge-dormant></script>
