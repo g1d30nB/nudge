@@ -2,6 +2,12 @@
 
 Installed bookmarks are pinned to a release. To get a new release, reinstall the bookmark from the [install page](https://g1d30nb.github.io/nudge/).
 
+## Unreleased
+
+### Added
+
+- **Undo and redo.** Command-Z (Control-Z on Windows and Linux) undoes the last change of any kind, Shift-Command-Z, Control-Y or Control-Shift-Z redoes it. A match, a siblings apply and a Reset each undo in one step. Copying a batch is the commit point: sent changes are never undone back into the next batch.
+
 ## v1.3.1, 12 October 2026
 
 ### Added

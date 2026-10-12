@@ -1989,3 +1989,98 @@ test('90 the panel moves by its header, a click still collapses, and it stays on
   await page.setViewportSize({ width: 500, height: 400 });
   await expect.poll(async () => { const r = await panelRect(page); return r.right <= 500 - 8 && r.bottom <= 400 - 8 && r.left >= 8 && r.top >= 8; }).toBe(true);
 });
+
+/* ───────────── undo and redo (checks 91–92) ───────────── */
+
+const depth = (page) => page.evaluate(() => ({ undo: window.__nudge._state.undoDepth, redo: window.__nudge._state.redoDepth }));
+const inlineWidth = (page, sel) => page.evaluate((s) => document.querySelector(s).style.width, sel);
+
+test('91 Command-Z undoes the last change and Shift-Command-Z redoes it; Control-Z and Control-Y too', async ({ page }) => {
+  await inject(page);
+  await select(page, '[data-test=card-a]');
+  await resizeE(page, '[data-test=card-a]', 160);
+  expect((await changes(page))[0].w).toBe(520);
+  await page.keyboard.press('Meta+z');
+  expect(await changes(page)).toHaveLength(0);
+  expect(await inlineWidth(page, '[data-test=card-a]')).toBe('');
+  await expect(status(page)).toHaveText('Undone. 0 more to undo.');
+  await page.keyboard.press('Meta+Shift+z');
+  expect((await changes(page))[0].w).toBe(520);
+  expect(await inlineWidth(page, '[data-test=card-a]')).toBe('520px');
+  await select(page, '[data-test=card-b]');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  expect(await depth(page)).toEqual({ undo: 3, redo: 0 });
+  await page.keyboard.press('Control+z');
+  expect((await changes(page)).find((r) => r.test === 'card-b').dx).toBe(1);
+  await page.keyboard.press('Control+z');
+  expect((await changes(page)).map((r) => r.test)).toEqual(['card-a']);
+  await page.keyboard.press('Control+y');
+  expect((await changes(page)).find((r) => r.test === 'card-b').dx).toBe(1);
+  await page.keyboard.press('Meta+z'); await page.keyboard.press('Meta+z');
+  expect(await changes(page)).toHaveLength(0);
+  await page.keyboard.press('Meta+z');
+  await expect(status(page)).toHaveText('Nothing to undo.');
+});
+
+test('92 undo covers every kind of change in one step each, and stops at a sent batch', async ({ page }) => {
+  await inject(page);
+  // Text edit.
+  await select(page, '[data-test=edit]');
+  await dblclickText(page, '[data-test=edit]');
+  await caretToEnd(page, '[data-test=edit]'); await page.keyboard.type('!');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => document.querySelector('[data-test=edit]').textContent)).toBe('Plans your team will read!');
+  await page.keyboard.press('Meta+z');
+  expect(await page.evaluate(() => document.querySelector('[data-test=edit]').textContent)).toBe('Plans your team will read');
+  expect(await changes(page)).toHaveLength(0);
+  // Colour.
+  await select(page, '[data-test=ink]');
+  await chip(page, 'color').click(); await swatch(page, '--ink-muted').click();
+  expect(await page.evaluate(() => document.querySelector('[data-test=ink]').style.color)).not.toBe('');
+  await page.keyboard.press('Meta+z');
+  expect(await page.evaluate(() => document.querySelector('[data-test=ink]').style.color)).toBe('');
+  // Removal.
+  await select(page, '#rotated');
+  await page.keyboard.press('Backspace');
+  expect(await page.evaluate(() => document.querySelector('#rotated').style.display)).toBe('none');
+  await page.keyboard.press('Meta+z');
+  expect(await page.evaluate(() => document.querySelector('#rotated').style.display)).toBe('');
+  // A match is one step.
+  await select(page, '[data-test=lede]'); await page.keyboard.press('p');
+  await select(page, '[data-test=type]'); await page.keyboard.press('m');
+  expect(await page.evaluate(() => document.querySelector('[data-test=type]').style.fontSize)).toBe('21px');
+  await page.keyboard.press('Meta+z');
+  expect(await page.evaluate(() => document.querySelector('[data-test=type]').style.cssText)).toBe('');
+  expect(await changes(page)).toHaveLength(0);
+  // Siblings.
+  await select(page, '[data-test=item-1]');
+  await typeInto(page, sizeField(page, 'w'), '300');
+  await select(page, '[data-test=item-1]');
+  await page.keyboard.press('a');
+  expect(await inlineWidth(page, '[data-test=item-3]')).toBe('300px');
+  await page.keyboard.press('Meta+z');
+  expect(await inlineWidth(page, '[data-test=item-3]')).toBe('');
+  expect(await inlineWidth(page, '[data-test=item-1]')).toBe('300px');
+  await page.keyboard.press('Meta+z');
+  expect(await inlineWidth(page, '[data-test=item-1]')).toBe('');
+  // Gap.
+  await select(page, '[data-test=card-a]');
+  const b = await rect(page, '[data-test=card-b]');
+  await altDrag(page, [b.cx, b.cy], [b.cx, b.cy + 16]);
+  expect(await page.evaluate(() => document.querySelector('#cards').style.rowGap)).toBe('40px');
+  await page.keyboard.press('Meta+z');
+  expect(await page.evaluate(() => document.querySelector('#cards').style.rowGap)).toBe('');
+  // Reset is one step.
+  await resizeE(page, '[data-test=card-a]', 160);
+  await select(page, '[data-test=card-b]'); await page.keyboard.press('ArrowRight');
+  await page.locator('#nudge-reset').click();
+  expect(await changes(page)).toHaveLength(0);
+  await page.keyboard.press('Meta+z');
+  expect(await changes(page)).toHaveLength(2);
+  // Copy commits: nothing to undo afterwards.
+  await copyAndSettle(page);
+  await page.keyboard.press('Meta+z');
+  await expect(status(page)).toHaveText('Nothing to undo. Sent changes are not undone; clear the preview instead.');
+  expect(await changes(page)).toHaveLength(2);
+});
