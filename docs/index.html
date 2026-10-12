@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install nudge</title>
-<meta name="description" content="Drag on the running page, then paste the measurements into your coding agent.">
+<meta name="description" content="Drag on the running page, then hand the measurements to Claude Code. A plugin for Claude Code, or a bookmarklet for any browser.">
 <style>
   :root { --ink: #1f2124; --ink-soft: #5b6068; --ink-faint: #8a9099; --line: #e3e5e8; --ground: #fbfbfa; --panel: #ffffff; --box: #d9dcdf; }
   * { box-sizing: border-box; }
@@ -19,6 +19,10 @@
   .bookmarklet { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: 6px; background: var(--ink); color: #fff; font-weight: 600; text-decoration: none; cursor: grab; white-space: nowrap; }
   .bookmarklet:active { cursor: grabbing; }
   .install p { margin: 0; font-size: 15px; }
+  .install--primary { display: block; border-color: var(--ink); }
+  .install--primary pre { margin: 6px 0 12px; font-size: 15px; }
+  .install--primary .label { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 4px; }
+  .install--primary p + p, .install--primary pre + p { margin-top: 0; }
   ol { margin: 0; padding-left: 20px; color: var(--ink-soft); }
   li { margin-bottom: 8px; }
   ul { margin: 0 0 14px; padding-left: 20px; color: var(--ink-soft); }
@@ -35,23 +39,43 @@
 <body>
 <main>
   <h1>nudge</h1>
-  <p class="lede">Drag on the running page, then paste the measurements into your coding agent.</p>
+  <p class="lede">Drag on the running page, then hand the measurements to Claude Code.</p>
+
+  <div class="install install--primary">
+    <div>
+      <p class="label">In Claude Code</p>
+      <pre>/plugin install nudge --marketplace g1d30nB/nudge</pre>
+      <p>Type that into a terminal session of Claude Code, answer <code>y</code> to add the marketplace, and choose the user scope. Then open your dev server in the browser pane and run <code>/nudge</code>. No bookmark, no paste: <code>/nudge batch</code> puts your changes in the prompt box, and after Claude applies them the plugin checks the page and prints what it found.</p>
+    </div>
+  </div>
 
   <div class="install">
     <a class="bookmarklet" href="javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();">nudge</a>
-    <p>Drag this button to your bookmarks bar. That is the whole install.</p>
+    <p><strong>In any other browser:</strong> drag this button to your bookmarks bar. Click it on the page you are working on, copy the batch, paste it into your agent.</p>
   </div>
 
   <h2>Use it</h2>
   <ol>
-    <li>Open the page you are working on and click the bookmark. A panel appears in the bottom right corner.</li>
+    <li>Open the page you are working on, in Claude Code's browser pane or your own browser, and run <code>/nudge</code> or click the bookmark. A panel appears in the bottom right corner.</li>
     <li>Click an element, then drag it, resize it from its handles, or press Backspace to remove it. Double-click text to edit it; with text selected, adjust its type and colour in the panel.</li>
-    <li>Hold Option and press the up arrow to select the parent of what you clicked, for wrappers you cannot click directly. Option and the down arrow comes back.</li>
-    <li>Click the panel's header to fold it out of the way while you work; click it again to expand.</li>
-    <li>Press <strong>Copy for Claude Code</strong> and paste the batch into your agent. It edits your source; nudge never does.</li>
-    <li>When your agent has applied it, press <strong>Clear preview</strong> to see the page as your code now renders it.</li>
-    <li>Click the bookmark again to close the panel.</li>
+    <li>Hold Option and press the up arrow to select the parent of what you clicked, for wrappers you cannot click directly. Option and the down arrow comes back. Command-Z undoes.</li>
+    <li>Click the panel's header to fold it out of the way while you work, or drag it elsewhere.</li>
+    <li>In Claude Code, run <code>/nudge batch</code> and press Enter. Elsewhere, press <strong>Copy for Claude Code</strong> and paste the batch into your agent as the whole message. It edits your source; nudge never does.</li>
+    <li>When your agent has applied it, press <strong>Clear preview</strong> to see the page as your code now renders it. nudge tells you what was applied and what was not.</li>
+    <li>Run <code>/nudge</code> or click the bookmark again to close the panel.</li>
   </ol>
+
+  <h2>Commands, in Claude Code</h2>
+  <table>
+    <tr><td><code>/nudge</code></td><td>Open nudge on the page in the pane. Again to close.</td></tr>
+    <tr><td><code>/nudge batch</code></td><td>Pull the batch into the prompt box.</td></tr>
+    <tr><td><code>/nudge batch send</code></td><td>Send it straight away.</td></tr>
+    <tr><td><code>/nudge at 390</code></td><td>Resize the pane. Also <code>at 1024x768</code>, <code>at mobile</code>, <code>tablet</code>, <code>desktop</code>.</td></tr>
+    <tr><td><code>/nudge dark</code></td><td>Dark colour scheme; <code>/nudge light</code> back.</td></tr>
+    <tr><td><code>/nudge verify</code></td><td>Report what the page shows of the last batch.</td></tr>
+    <tr><td><code>/nudge history</code></td><td>List every batch sent this page load.</td></tr>
+  </table>
+  <p>After a batch is sent, the plugin checks the page when Claude's turn ends and prints the verdict under the answer. When the pane navigates to another page of your site, the plugin loads nudge there again.</p>
 
   <h2>New in v1.4.0, 12 October 2026</h2>
   <ul>
@@ -69,7 +93,7 @@
   </ul>
 
   <h2>New in v1.3.0, 11 October 2026</h2>
-  <p>The biggest release since launch. Reinstall the bookmark above to get it; installed bookmarks are pinned to the release they came from.</p>
+  <p>The biggest release since launch. The plugin follows the current release; installed bookmarks are pinned to the release they came from, so reinstall the bookmark above to get it.</p>
   <ul>
     <li><strong>Resize from any edge.</strong> Eight handles. Dragging the left or top edge moves that edge, and the batch reports the size and the move. Command resizes from the centre; Option locks the ratio. Width and height fields in the panel, with steppers that snap.</li>
     <li><strong>Breakpoints.</strong> nudge reads your breakpoints from the page's stylesheets. A badge on the panel header shows the window width and the range it falls in; click it to draw the breakpoint lines. The batch says which range it was measured in, and flags an element that has different rules at other widths.</li>
@@ -110,8 +134,8 @@
   <p>Create a new bookmark by hand and paste this line as its URL.</p>
   <pre>javascript:(function(){if(window.__nudge){window.__nudge.destroy();return}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/gh/g1d30nB/nudge@v1.4.0/nudge.js?t='+Date.now();document.documentElement.appendChild(s)})();</pre>
 
-  <h2>In your project, for Claude Code's browser</h2>
-  <p>Claude Code's built-in browser has no bookmarks bar. Put nudge in the project instead and it loads as a small blue dot in the bottom left corner while you develop. Click the dot to open it. It is the same file, and it cannot reach your live site: the tag only exists in development, and nudge refuses to run anywhere but a local address.</p>
+  <h2>In your project, as a script tag</h2>
+  <p>The third way, for a project the whole team works on: put nudge in the project itself and it loads as a small blue dot in the bottom left corner while you develop, in Claude Code's browser pane or any browser pointed at the dev server. Click the dot to open it. It is the same file, and it cannot reach your live site: the tag only exists in development, and nudge refuses to run anywhere but a local address.</p>
   <p>Paste this into Claude Code as one message, in the project you are building:</p>
   <pre>Add nudge to this project so that it loads only while I am developing.
 
@@ -126,21 +150,6 @@ Rules:
 - Change nothing else.
 - When you are done, start the dev server, tell me which file you changed, and remind me that the small blue dot in the bottom left corner of the page opens nudge.</pre>
   <p>To take it out again: <em>Remove nudge from this project: delete the script tag and any code you added to load it.</em> Details and snippets for each framework are in the <a href="https://github.com/g1d30nB/nudge#putting-nudge-in-your-project">README</a>.</p>
-
-  <h2>The Claude Code plugin</h2>
-  <p>With the plugin, nudge needs no bookmark and no paste. In a terminal session of Claude Code:</p>
-  <pre>/plugin install nudge --marketplace g1d30nB/nudge</pre>
-  <p>Answer <code>y</code> to add the marketplace and choose the user scope. Then, with your dev server open in the browser pane:</p>
-  <table>
-    <tr><td><code>/nudge</code></td><td>Open nudge on the page in the pane. Again to close.</td></tr>
-    <tr><td><code>/nudge batch</code></td><td>Pull the batch into the prompt box.</td></tr>
-    <tr><td><code>/nudge batch send</code></td><td>Send it straight away.</td></tr>
-    <tr><td><code>/nudge at 390</code></td><td>Resize the pane. Also <code>at 1024x768</code>, <code>at mobile</code>, <code>tablet</code>, <code>desktop</code>.</td></tr>
-    <tr><td><code>/nudge dark</code></td><td>Dark colour scheme; <code>/nudge light</code> back.</td></tr>
-    <tr><td><code>/nudge verify</code></td><td>Report what the page shows of the last batch.</td></tr>
-    <tr><td><code>/nudge history</code></td><td>List every batch sent this page load.</td></tr>
-  </table>
-  <p>After a batch is sent, the plugin checks the page when Claude's turn ends and prints the verdict under the answer.</p>
 
   <footer>
     Source, limitations and how to contribute: <a href="https://github.com/g1d30nB/nudge">github.com/g1d30nB/nudge</a>. MIT licence.
