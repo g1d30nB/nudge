@@ -184,15 +184,17 @@
   /* ────────────────────────── records ────────────────────────── */
 
   function rec(el) {
+    checkpoint();   // once, before anything below changes the world
     let r = state.changes.get(el);
     if (r && r.sent) {
       // The agent may already have applied this change, so its baseline no longer exists in the code.
-      checkpoint();
       undo(r); r = null; state.notice = FRESH;
     }
-    if (r) return r;
-    checkpoint();
-    return create(el);
+    if (r && r.hidden) {
+      // Its earlier change belongs to another width; a change here starts from the page as it renders here.
+      undo(r); r = null; state.notice = `Its change from another width was dropped; this one starts from the page at ${innerWidth}px.`;
+    }
+    return r || create(el);
   }
   function create(el) {
     let r;
@@ -213,6 +215,9 @@
       text: null, baseText: null, origNodes: null,
       type: {}, baseType: null, colour: {}, baseColour: {},
       sent: false, sentBatch: 0, sentSeq: 0,
+      madeAt: innerWidth, madeAtH: innerHeight,                       // the viewport the change was measured in
+      range: breakpoints().points.length ? rangeOf(innerWidth) : null,  // its breakpoint range, null on a page without any
+      hidden: false,                                                   // preview lifted because the window left that range
     };
     el.style.transition = 'none';
     if (c.maxWidth !== 'none') r.base.capped = heldByMaxWidth(el);
@@ -233,7 +238,40 @@
     return free > before + 0.5;
   }
 
+  // A preview is only true in the breakpoint range it was made in. Outside it the preview is lifted and
+  // the page shows as the stylesheet renders it at this width; back inside, the preview returns.
+  const outOfRange = (r) => !!r.range && (innerWidth < r.range.lo || innerWidth > r.range.hi);
+  function lift(r) {
+    const el = r.el, o = r.orig;
+    el.style.transform = o.transform; el.style.width = o.width; el.style.height = o.height;
+    el.style.maxWidth = o.maxWidth; el.style.maxHeight = o.maxHeight; el.style.display = o.display;
+    TYPE.forEach((d) => { el.style[d.key] = o[d.key]; });
+    COLOUR.forEach((d) => { el.style[d.key] = o[d.key]; });
+    if (r.gap) r.gap.target.style[r.gap.prop] = r.gap.origInline;
+    if (r.also) r.also.forEach(({ el: x, orig }) => SIB_PROPS.forEach((k) => { x.style[k] = orig[k]; }));
+    if (r.text != null && r.origNodes) el.replaceChildren(...r.origNodes.map((n) => n.cloneNode(true)));
+  }
+  function reapply(r) {
+    if (r.text != null) r.el.textContent = r.text;
+    apply(r);
+  }
+  function syncRanges() {
+    let changed = false;
+    allRecs().forEach((r) => {
+      const hide = outOfRange(r);
+      if (hide === r.hidden) return;
+      r.hidden = hide; changed = true;
+      if (hide) lift(r); else reapply(r);
+    });
+    if (!changed) return;
+    const hidden = allRecs().filter((r) => r.hidden).length;
+    render(); updateBoxes(); renderProps();
+    if (hidden) setStatus(`${hidden} preview${hidden > 1 ? 's' : ''} hidden at this width: made in the ${allRecs().find((r) => r.hidden).range.text} range.`);
+    else if (state.selected) showCrumbs(state.selected); else setStatus(idleStatus());
+  }
+
   function apply(r) {
+    if (r.hidden) { lift(r); return; }
     const el = r.el, o = r.orig;
     const baseT = (r.base.cTransform && r.base.cTransform !== 'none') ? ' ' + r.base.cTransform : '';
     el.style.transform = (r.dx || r.dy) ? `translate(${r.dx}px, ${r.dy}px)${baseT}` : o.transform;
@@ -925,11 +963,13 @@
     return bits.length ? `different rules apply ${bits.join(' and ')}; this was measured in the ${cur.text} range` : '';
   }
 
-  function viewportLine() {
+  function viewportLine(widths = [innerWidth]) {
     const { points, unreadable } = breakpoints();
-    const w = innerWidth;
-    if (!points.length) return unreadable ? `measured at ${w}px wide; ${unreadable} stylesheet${unreadable > 1 ? 's' : ''} could not be read for breakpoints` : `measured at ${w}px wide; the page has no width breakpoints`;
-    return `measured at ${w}px wide, in the ${rangeOf(w).text} range (breakpoints at ${points.join(', ')}px${unreadable ? `, ${unreadable} stylesheet${unreadable > 1 ? 's' : ''} unreadable` : ''})`;
+    const at = widths.map((w) => `${w}px`).join(' and ');
+    const unread = unreadable ? `${unreadable} stylesheet${unreadable > 1 ? 's' : ''}` : '';
+    if (!points.length) return unread ? `measured at ${at} wide; ${unread} could not be read for breakpoints` : `measured at ${at} wide; the page has no width breakpoints`;
+    const ranges = [...new Set(widths.map((w) => rangeOf(w).text))].join(' and the ');
+    return `measured at ${at} wide, in the ${ranges} range (breakpoints at ${points.join(', ')}px${unread ? `, ${unread} unreadable` : ''})`;
   }
 
   /* ────────────────────────── verify ────────────────────────── */
@@ -961,6 +1001,7 @@
     const item = { path: pathTo(el), desc: descriptor(el), name: descriptor(el) + (snippet(el) ? ' ' + snippet(el) : ''), checks: {} };
     if (r.removed) { item.checks.removed = true; return item; }
     const b = el.getBoundingClientRect(), c = cs(el);
+    if (r.hidden) { if (r.w != null) item.checks.width = r.w; if (r.h != null) item.checks.height = r.h; return item; }   // lifted at this width: only its sizes are known
     if (r.w != null) item.checks.width = rnd(b.width);
     if (r.h != null) item.checks.height = rnd(b.height);
     if (r.dx) item.checks.left = rnd(b.left + scrollX);
@@ -1068,6 +1109,7 @@
       matched: r.matched ? { el: r.matched.el, props: r.matched.props.slice() } : null,
       also: r.also ? r.also.map((x) => ({ el: x.el, orig: { ...x.orig } })) : null,
       gap: r.gap ? { ...r.gap } : null,
+      madeAt: r.madeAt, madeAtH: r.madeAtH, range: r.range, hidden: r.hidden,
     };
   }
   // A comparable text for a snapshot: elements by id, everything else by value.
@@ -1103,8 +1145,9 @@
           matched: x.matched ? { el: x.matched.el, props: x.matched.props.slice() } : null,
           also: x.also ? x.also.map((a) => ({ el: a.el, orig: { ...a.orig } })) : null,
           gap: x.gap ? { ...x.gap } : null,
+          madeAt: x.madeAt, madeAtH: x.madeAtH, range: x.range, hidden: outOfRange({ range: x.range }),
         });
-        if (x.text != null) { r.text = x.text; el.textContent = x.text; }
+        if (x.text != null) { r.text = x.text; if (!r.hidden) el.textContent = x.text; }
         else { r.text = null; if (r.origNodes) el.replaceChildren(...r.origNodes.map((n) => n.cloneNode(true))); }
         apply(r);
       });
@@ -1474,12 +1517,14 @@
     const recs = allRecs();
     if (!recs.length) { list.appendChild(node('div', 'padding:10px 14px;color:#6f6a62', 'No changes yet.')); return; }
     recs.forEach((r, i) => {
-      const row = node('div', 'padding:8px 14px;display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid #242220;' + (r.sent ? 'opacity:.5;' : ''));
+      const row = node('div', 'padding:8px 14px;display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid #242220;' + (r.sent || r.hidden ? 'opacity:.5;' : ''));
       if (r.sent) row.setAttribute('data-sent', '');
+      if (r.hidden) row.setAttribute('data-hidden', '');
       row.appendChild(node('div', `width:14px;flex-shrink:0;color:${r.sent ? '#8fd18f' : '#6f6a62'}`, r.sent ? '✓' : String(i + 1)));
       const body = node('div', 'flex:1;min-width:0');
       body.appendChild(node('div', 'color:#c9c2b7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', descriptor(r.el)));
       body.appendChild(node('div', '', summary(r)));
+      if (r.hidden) body.appendChild(node('div', 'color:#f2c86b', `made at ${r.madeAt}px, hidden at this width`));
       r.snaps.forEach((t) => body.appendChild(node('div', 'color:#e0447a', t)));
       row.appendChild(body);
       const btn = node('button', 'background:none;border:1px solid #3a3733;color:#9c958b;border-radius:5px;padding:2px 7px;font:11px system-ui;cursor:pointer', 'undo');
@@ -1501,8 +1546,10 @@
 
   function report(recs = allRecs()) {
     const lines = [];
-    lines.push(`nudge batch · ${location.href} · viewport ${innerWidth}×${innerHeight} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`);
-    lines.push(viewportLine());
+    const widths = [...new Set(recs.map((r) => r.madeAt))];
+    const first = recs[0];
+    lines.push(`nudge batch · ${location.href} · viewport ${widths.length === 1 ? `${first.madeAt}×${first.madeAtH}` : widths.map((w) => `${w}`).join(' and ') + ' wide'} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`);
+    lines.push(viewportLine(widths));
     lines.push('');
     let responsive = false;
     recs.forEach((r, i) => {
@@ -1533,7 +1580,7 @@
       if (r.gap && !r.removed) lines.push(`   gap to ${label(r.gap.other)} ${r.gap.from}px → ${r.gap.to}px (${r.gap.source})`);
       guardLines(r).forEach((g) => lines.push(`   ${g}`));
       if (r.also) lines.push(`   apply the same to its ${r.also.length} sibling${r.also.length > 1 ? 's' : ''} (${r.also.length + 1} × ${descriptor(r.el).split(' > ').pop()} in total)`);
-      if (!r.removed) { const rn = responsiveNote(r.el); if (rn) { lines.push(`   ${rn}`); responsive = true; } }
+      if (!r.removed) { const rn = responsiveNote(r.el, r.madeAt); if (rn) { lines.push(`   ${rn}`); responsive = true; } }
       lines.push('');
     });
     // Only the guidance this batch needs.
@@ -2156,7 +2203,7 @@
     [document, 'dblclick', onDblClick], [document, 'beforeinput', onBeforeInput], [document, 'paste', onPaste],
     [document, 'drop', onDrop], [window, 'scroll', onScroll], [window, 'resize', onResize],
   ];
-  function onResize() { onScroll(); renderViewport(); keepPanelOnScreen(); }
+  function onResize() { onScroll(); renderViewport(); keepPanelOnScreen(); syncRanges(); }
 
   let headTarget = null;
   function observeHead() {
@@ -2174,6 +2221,7 @@
     dot.hidden = true;
     state.bp = null;
     render(); updateBoxes(); renderProps();
+    syncRanges();
   }
 
   // Sleeping discards previews, as closing does, so nothing invisible is left masking the real page.
@@ -2277,6 +2325,7 @@
       get measure() { return state.measure; },
       get undoDepth() { return state.undo.length; },
       get redoDepth() { return state.redo.length; },
+      get hidden() { return allRecs().filter((r) => r.hidden).map((r) => r.el); },
       get verdict() { return state.verdict; },
       els: { overlay, panel, selBox, hoverBox, guideH, guideV, matchBox, handles, dot, bpLayer, xrayLayer, rulerLayer, hoverTag, pinBox },
     },
